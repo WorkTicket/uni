@@ -308,3 +308,60 @@ def test_lab_bad_id_rejected(client):
 def test_research_lab_page_served(client):
     r = client.get("/research-lab")
     assert r.status_code == 200 and "<canvas" in r.text
+
+
+# ---- read-only planetary habitat API ----
+def test_habitat_create_and_get(client):
+    r = client.post("/api/habitat", json={"id": "h1", "seed": 3, "n_patches": 4})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == "h1" and body["status"] == "created"
+    assert "state" in body and "sterile" in body["state"]
+
+    g = client.get("/api/habitat/h1").json()
+    assert g["sterile"] is True
+    assert g["replicators"] == {}
+
+
+def test_habitat_chemistry_endpoint(client):
+    client.post("/api/habitat", json={"id": "h2", "seed": 4})
+    g = client.get("/api/habitat/h2/chemistry").json()
+    assert "t_gyr" in g and "species" in g and "patches" in g
+    assert len(g["patches"]) == 8
+    for p in g["patches"]:
+        assert "index" in p and "c" in p and "temperature_K" in p
+        assert "pH" in p and "liquid_water" in p
+        assert "nutrient_mol" in p and "waste_mol" in p
+
+
+def test_habitat_population_endpoint(client):
+    client.post("/api/habitat", json={"id": "h3", "seed": 5})
+    g = client.get("/api/habitat/h3/population").json()
+    assert "sterile" in g and "replicators" in g
+    assert "pool_monomer" in g and "total_replicators" in g
+    assert g["sterile"] is True
+
+
+def test_habitat_lineage_endpoint(client):
+    client.post("/api/habitat", json={"id": "h4", "seed": 6})
+    g = client.get("/api/habitat/h4/lineage").json()
+    assert "t_gyr" in g and "lineages" in g and "n_lineages" in g
+
+
+def test_habitat_resources_endpoint(client):
+    client.post("/api/habitat", json={"id": "h5", "seed": 7})
+    g = client.get("/api/habitat/h5/resources").json()
+    assert "t_gyr" in g and "pool_monomer" in g
+    assert "patches" in g and "mass_ledger_error" in g
+
+
+def test_habitat_bad_id_rejected(client):
+    assert client.get("/api/habitat/nonexistent-id/chemistry").status_code == 404
+    assert client.post("/api/habitat", json={"id": "../etc/passwd"}).status_code == 422
+    assert client.post("/api/habitat", json={"id": "a b"}).status_code == 422
+
+
+def test_habitat_duplicate_id_rejected(client):
+    client.post("/api/habitat", json={"id": "dup", "seed": 1})
+    r = client.post("/api/habitat", json={"id": "dup", "seed": 2})
+    assert r.status_code == 422

@@ -7,6 +7,7 @@ import re
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import Dict
 
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
@@ -15,12 +16,15 @@ from fastapi.staticfiles import StaticFiles
 from .session import PRESETS, ParamError, Session
 from ..multiverse import MultiverseManager, MultiverseError
 from .research_lab import ResearchLab, ResearchLabError
+from ..habitat import Habitat, make_default_network
+from ..planet.model import Planet, PlanetSpec
 
 STATIC = Path(__file__).parent / "static"
 MAX_STEPS_PER_REQUEST = 10_000
 DEFAULT_COSMOLOGY = {"H0_km_s_Mpc": 67.4, "Omega_m": 0.315, "Omega_r": 0.000092, "Omega_Lambda": 0.684908, "spectral_index": 0.965}
 SAVE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 UNIVERSE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+HABITAT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def load_cosmology():
@@ -46,6 +50,7 @@ def create_app(save_dir="runs/observatory"):
     save_root = Path(save_dir)
     multiverse = MultiverseManager(save_root.parent / "multiverse")
     research_lab = ResearchLab(save_root.parent / "research_lab")
+    habitat_holder: Dict[str, Habitat] = {}
 
     @app.exception_handler(ParamError)
     async def _param_error(request, exc):
@@ -330,6 +335,116 @@ def create_app(save_dir="runs/observatory"):
                 await asyncio.sleep(0.03)
         except (WebSocketDisconnect, RuntimeError):
             return
+
+    # ---- read-only planetary habitat API ----
+    HABITAT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+    @app.post("/api/habitat")
+    def habitat_create(body: dict = Body(default={})):
+        """Create a new planetary habitat (read-only observation thereafter via GET endpoints).
+
+        Body: { "id": str, "seed": int, "n_patches": int, "t_gyr": float,
+                "has_water": bool, "a_au": float }
+        """
+        hid = body.get("id") or time.strftime("hab-%Y%m%dT%H%M%S")
+        if not HABITAT_ID.match(str(hid)):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        if hid in habitat_holder:
+            raise ParamError(f"habitat {hid!r} already exists")
+        seed = int(body.get("seed", 0))
+        n_patches = int(body.get("n_patches", 8))
+        t_gyr = float(body.get("t_gyr", 4.5))
+        has_water = bool(body.get("has_water", True))
+        a_au = float(body.get("a_au", 1.0))
+        spec = PlanetSpec(mass_mearth=1.0, a_au=a_au, ocean_fraction=0.71,
+                          has_surface_water=has_water, tectonics="mobile", seed=seed)
+        planet = Planet(spec, t_gyr=t_gyr)
+        network = make_default_network()
+        habitat_holder[hid] = Habitat(planet, network, n_patches=n_patches, seed=seed)
+        return {"id": hid, "status": "created", "state": habitat_holder[hid].state()}
+
+    @app.get("/api/habitat/{hid}")
+    def habitat_get(hid: str):
+        if not HABITAT_ID.match(hid):
+            raise ParamError("invalid habitat id")
+        if hid not in habitat_holder:
+            raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+        return habitat_holder[hid].state()
+
+    @app.get("/api/habitat/{hid}/chemistry")
+    def habitat_chemistry(hid: str):
+        if not HABITAT_ID.match(hid):
+            raise ParamError("invalid habitat id")
+        if hid not in habitat_holder:
+            raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+        h = habitat_holder[hid]
+        return {
+            "t_gyr": h.t_gyr,
+            "species": h.species_names,
+            "patches": [{
+                "index": p.index,
+                "c": p.c.tolist(),
+                "temperature_K": p.temperature_K,
+                "pH": p.pH,
+                "liquid_water": p.liquid_water,
+                "nutrient_mol": p.nutrient_mol,
+                "waste_mol": p.waste_mol,
+                "volume_L": p.volume_L,
+            } for p in h.patches],
+        }
+
+    @app.get("/api/habitat/{hid}/population")
+    def habitat_population(hid: str):
+        if not HABITAT_ID.match(hid):
+            raise ParamError("invalid habitat id")
+        if hid not in habitat_holder:
+            raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+        h = habitat_holder[hid]
+        st = h.state()
+        rep = h.replicators
+        return {
+            "t_gyr": h.t_gyr,
+            "sterile": st.sterile,
+            "replicators": st.replicators,
+            "pool_monomer": st.pool_monomer,
+            "total_replicators": sum(st.replicators.values()),
+            "lineage": rep.lineage if rep is not None else {},
+        }
+
+    @app.get("/api/habitat/{hid}/lineage")
+    def habitat_lineage(hid: str):
+        if not HABITAT_ID.match(hid):
+            raise ParamError("invalid habitat id")
+        if hid not in habitat_holder:
+            raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+        h = habitat_holder[hid]
+        rep = h.replicators
+        if rep is None:
+            return {"t_gyr": h.t_gyr, "lineages": {}, "n_lineages": 0}
+        return {
+            "t_gyr": h.t_gyr,
+            "lineages": rep.lineage,
+            "n_lineages": len(rep.lineage),
+        }
+
+    @app.get("/api/habitat/{hid}/resources")
+    def habitat_resources(hid: str):
+        if not HABITAT_ID.match(hid):
+            raise ParamError("invalid habitat id")
+        if hid not in habitat_holder:
+            raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+        h = habitat_holder[hid]
+        return {
+            "t_gyr": h.t_gyr,
+            "pool_monomer": h.replicators.pool if h.replicators is not None else 0,
+            "patches": [{
+                "index": p.index,
+                "nutrient_mol": p.nutrient_mol,
+                "waste_mol": p.waste_mol,
+                "volume_L": p.volume_L,
+            } for p in h.patches],
+            "mass_ledger_error": h._ledger_error,
+        }
 
     app.mount("/js", StaticFiles(directory=STATIC / "js"), name="js")
     app.mount("/css", StaticFiles(directory=STATIC / "css"), name="css")

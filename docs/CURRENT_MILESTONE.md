@@ -2,9 +2,11 @@
 
 Authoritative, machine-generated numbers: `docs/IMPLEMENTATION_STATUS.json` (regenerate with `python scripts/write_status.py`).
 
-Branch: `feature/multiverse-overhaul` (from baseline commit `021a093`).
+Branch: `feature/unified-planetary-life` (from baseline commit `dcb0e95`).
 
 **Passes 1–6 complete:** future cosmology/timeline (`a` up to 10), Keplerian orbits with `argument of periapsis`, frame-rate-independent absolute-time integration, follow/surface camera, Galaxy Map (`G`) / Solar System Map (`M`), multiverse manager (versioned JSON+npz checkpoints, branching, isolation, no pickle), coupled habitat (planet/chemistry/protocells/replicators with mass ledger; sterile unless explicitly seeded).
+
+**Unified planetary life (this branch):** shared `HabitatState` connecting Planet environment → Chemistry Network → Protocell compartments → Replicator populations with explicit material accounting, persistent lineage identities, and checkpoint/restore. Three reproducible scenarios verified: sterile environment, sustained microbial population, resource-driven extinction. Read-only observatory API exposes live habitat chemistry, population, lineage, and resources (`/api/habitat/{id}`, `/chemistry`, `/population`, `/lineage`, `/resources`).
 
 **Pass 7 complete:** simulation-connected planet appearance (oceans/atmosphere gated by `simLiqW`/`simAtm`), chemical-field overlay / microscopic view (`V`), quality modes low/medium/high/ultra, inspector sim-state rows.
 
@@ -12,11 +14,11 @@ Branch: `feature/multiverse-overhaul` (from baseline commit `021a093`).
 
 | Item | Result (measured) |
 |---|---|
-| Tests | 239 passed, 1 skipped (was 199 at overhaul start) |
+| Tests | 274 passed, 1 skipped |
 | `universe benchmark hydro` | 106/106 |
 | `universe benchmark gravity` | 40/40 |
 | `universe benchmark nbody` | 37/37 |
-| Observatory API | `/api/lab/*` research lab endpoints verified (50 observatory tests pass) |
+| Observatory API | `/api/lab/*` research lab endpoints verified; `/api/habitat/*` read-only planetary habitat endpoints added |
 | JS syntax | all `static/js/*.js` files pass `node --check` |
 
 ## What this is NOT (read SCIENTIFIC_LIMITS.md)
