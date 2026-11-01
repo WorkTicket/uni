@@ -35,6 +35,10 @@
   <h4>About this model</h4>
   <p class="fine">Cosmic expansion and linear growth use the engine's flat &Lambda;CDM background. The web is a truncated Zel'dovich approximation, not an N-body run. Galaxies, stars and planets are procedurally generated from the seed. Early-universe visuals are schematic, with contrast exaggerated — they do not represent solved Planck-era physics. The timeline extends into the future beyond today.</p>
   <p class="fine">Scientific fidelity: SIMULATED (FLRW background), DERIVED (Zel'dovich structure, Keplerian orbits), ILLUSTRATIVE (galaxies, stars, planets, black holes). <a href="/research-lab" style="color:var(--accent, #58a6ff)">Open Research Laboratory &rarr;</a> — run evolution experiments, track populations, lineage and extinction.</p>
+  <h4>Model horizon</h4>
+  <p class="fine" id="horizon-info" style="font-size:0.75em;opacity:0.8">Validated scale-factor horizon: a=<span id="horizon-val">80</span> (t ≈ <span id="horizon-t">100</span> Gyr)</p>
+  <div class="row"><input id="horizon-a" type="number" value="400" step="1" style="width:6em"><button id="btn-extend-horizon" class="pill">Extend horizon</button><button id="btn-reset-horizon" class="pill icon" title="Reset to default horizon">&#8634;</button></div>
+  <p class="fine" style="font-size:0.7em;opacity:0.6">Extending the horizon continues the validated FLRW background to a later finite horizon. It does not promise infinite runtime.</p>
   <h4>View mode</h4>
   <div class="seg" id="view-mode"><button data-m="illustrative" class="on">Illustrative (procedural)</button><button data-m="scientific">Scientific Simulation (PM3D)</button></div>
   <h4>Scientific Simulation</h4>
@@ -66,9 +70,11 @@
   <div class="tl">
     <div class="ticks" id="tl-ticks"></div>
     <input id="tl" type="range" min="0" max="1000" value="0" step="1" aria-label="Cosmic time">
-    <div class="stats"><span>Temperature <b id="t-temp"></b></span><span>Redshift <b id="t-z"></b></span><span>Size of region <b id="t-size"></b></span></div>
+    <div id="tl-rate" class="fine" style="text-align:center;margin-top:4px">Rate: paused · paused</div>
+    <div class="stats"><span>Temperature <b id="t-temp"></b></span><span>Redshift <b id="t-z"></b></span><span>Region (comoving) <b id="t-size"></b></span></div>
   </div>
-  <div class="seg small" id="speed"><button data-s="0.25">&frac14;&times;</button><button data-s="1" class="on">1&times;</button><button data-s="4">4&times;</button><button data-s="16">16&times;</button></div>
+  <div id="horizon-notice" class="fine notice" hidden>Reached current model horizon — extend to continue</div>
+  <div class="seg small" id="speed"></div>
 </footer>
 <div id="epoch-card" class="glass"><b id="ep-name"></b><p id="ep-text"></p></div>
 <div id="hint">Scroll to fly into whatever you point at &middot; drag to orbit &middot; click a label to travel &middot; Backspace zooms out</div>
@@ -90,6 +96,7 @@
 
 <script src="js/util.js"></script>
 <script src="js/cosmo.js"></script>
+<script src="js/camera.js"></script>
 <script src="js/webgen.js"></script>
 <script src="js/gl.js"></script>
 <script src="js/shaders.js"></script>

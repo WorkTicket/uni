@@ -21,17 +21,100 @@
 
     // ---- transport ----
     const slider = $("tl"), play = $("btn-play");
-    slider.addEventListener("input", () => { app.pause(); app.setS(slider.value / 1000); });
-    play.addEventListener("click", () => (app.playing ? app.pause() : app.play()));
-    app.on("play", (p) => { play.innerHTML = p ? "&#10074;&#10074;" : "&#9654;"; play.setAttribute("aria-label", p ? "Pause" : "Play"); });
+    // Slider scrubs physical (cosmic) time within the validated horizon; it never resets the universe.
+    slider.addEventListener("input", () => { app.pause(); app.setS(parseFloat(slider.value) / 1000); });
+    play.addEventListener("click", () => { const r = app.togglePlayback(); updatePlaybackUI(); });
+    app.on("play", (p) => { play.innerHTML = p ? "&#10074;&#10074;" : "&#9654;"; play.setAttribute("aria-label", p ? "Pause" : "Play"); updatePlaybackUI(); });
+    app.on("playback-changed", () => { updatePlaybackUI(); });
+    app.on("horizon-reached", () => { updatePlaybackUI(); showHorizonNotice(); });
+    app.on("horizon-extended", (r) => { updatePlaybackUI(); showHorizonNotice(r); });
     $("btn-step-back").addEventListener("click", () => { app.stepBackward(); });
     $("btn-step-fwd").addEventListener("click", () => { app.stepForward(); });
-    document.querySelectorAll("#speed button").forEach((b) => b.addEventListener("click", () => {
-      app.speed = parseFloat(b.dataset.s); document.querySelectorAll("#speed button").forEach((x) => x.classList.toggle("on", x === b));
-    }));
+    // Playback presets: Paused / Observe / Explore / Fast Forward / Custom / Cinematic Tour.
+    const speedSeg = $("speed");
+    function renderPresets() {
+      speedSeg.innerHTML = "";
+      const names = app.playback.presetNames();
+      names.forEach((key) => {
+        const p = app.playback.preset(key);
+        const b = document.createElement("button");
+        b.dataset.s = p.rate; b.dataset.preset = key;
+        b.textContent = (p.cinematic ? "[" : "") + p.label + (p.cinematic ? "]" : "");
+        b.title = p.label + " · " + fmtRate(p.rate) + " sim s / wall s" + (p.cinematic ? " (compressed overview)" : "");
+        b.classList.toggle("on", key === app.playback.preset && Math.abs(app.playback.rate - p.rate) < 1e-6);
+        b.addEventListener("click", () => { app.pause(); const r = app.playback.setPreset(key); updatePlaybackUI(); });
+        speedSeg.appendChild(b);
+      });
+      // Custom rate input.
+      const custom = app.playback.preset("custom");
+      const inp = document.createElement("input"); inp.type = "number"; inp.step = "any"; inp.min = "0";
+      inp.value = fmtRate(app.playback.customRate);
+      inp.title = "Custom playback rate (simulated seconds per wall-clock second)";
+      inp.addEventListener("change", () => {
+        const v = parseFloat(inp.value);
+        if (Number.isFinite(v) && v >= 0) { app.pause(); app.playback.setCustomRate(v); updatePlaybackUI(); }
+      });
+      speedSeg.appendChild(inp);
+      const lbl = document.createElement("span"); lbl.className = "fine"; lbl.textContent = " sim s/wall s";
+      speedSeg.appendChild(lbl);
+    }
+    function fmtRate(r) {
+      if (r === 0) return "paused";
+      if (r >= 1e9) return (r / 1e9).toFixed(2) + "×10⁹";
+      if (r >= 1e6) return (r / 1e6).toFixed(2) + "×10⁶";
+      if (r >= 1e3) return (r / 1e3).toFixed(2) + "×10³";
+      if (r >= 1) return r.toFixed(2);
+      return r.toExponential(2);
+    }
+    function updatePlaybackUI() {
+      renderPresets();
+      const r = app.getRate();
+      const p = app.getPreset();
+      const playing = app.getPlaying();
+      $("btn-play").innerHTML = playing ? "&#10074;&#10074;" : "&#9654;";
+      $("btn-play").setAttribute("aria-label", playing ? "Pause" : "Play");
+      const rateEl = $("tl-rate");
+      if (rateEl) rateEl.textContent = "Rate: " + fmtRate(r) + " · " + p + (playing ? " · playing" : " · paused");
+    }
+    function showHorizonNotice(r) {
+      const el = $("horizon-notice");
+      if (!el) return;
+      if (app.U.Cosmo.atBoundary()) {
+        el.hidden = false;
+        el.textContent = r && r.message ? r.message : "Reached current model horizon — extend to continue";
+      } else {
+        el.hidden = true;
+      }
+    }
     $("btn-home").addEventListener("click", () => { app.homeView(); });
     $("btn-dive").addEventListener("click", () => startDive());
     function startDive() { app.planDive((Date.now() & 0xffff) ^ app.seed); }
+    // ---- horizon extension ----
+    const horizonInfo = $("horizon-info"), horizonVal = $("horizon-val"), horizonT = $("horizon-t");
+    function updateHorizonDisplay() {
+      if (!horizonInfo) return;
+      const aMax = app.U.Cosmo.a_max;
+      const tMax = app.U.Cosmo.tOfA(aMax);
+      horizonVal.textContent = aMax.toFixed(2);
+      horizonT.textContent = (tMax / (1e9 * app.U.YEAR)).toFixed(1);
+      horizonInfo.hidden = false;
+    }
+    updateHorizonDisplay();
+    $("btn-extend-horizon").addEventListener("click", () => {
+      const v = parseFloat($("horizon-a").value);
+      if (!Number.isFinite(v) || v <= 0) { $("horizon-a").focus(); return; }
+      try {
+        const r = app.extendHorizon(v);
+        if (r.ok) { updateHorizonDisplay(); updatePlaybackUI(); showHorizonNotice(r); }
+        else { alert("Cannot extend horizon: " + r.error); }
+      } catch (e) { alert("Extend horizon failed: " + e.message); }
+    });
+    $("btn-reset-horizon").addEventListener("click", () => {
+      try {
+        const r = app.extendHorizon(80);
+        updateHorizonDisplay(); updatePlaybackUI(); showHorizonNotice(r);
+      } catch (e) { alert("Reset horizon failed: " + e.message); }
+    });
     // ---- menu ----
     const menu = $("menu");
     $("btn-menu").addEventListener("click", () => { menu.hidden = !menu.hidden; });
@@ -118,7 +201,7 @@
     function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; $("btn-skip").disabled = true; } }
     function fail(e) { const el = $("intro-err"); el.hidden = false; el.textContent = String(e && e.message || e); console.error(e); }
     ui.progress = progress; ui.fail = fail;
-    $("btn-begin").addEventListener("click", () => { app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.play(); });
+    $("btn-begin").addEventListener("click", () => { app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.pause(); });
     $("btn-skip").addEventListener("click", () => { app.homeView(); app.setS(U.Cosmo.NOW_S); showIntro(false); app.pause(); });
 
     // ---- input ----
@@ -156,19 +239,30 @@
       if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.key !== "Escape") return;
       switch (e.key) {
         case " ": e.preventDefault(); play.click(); break;
-        case "d": case "D": startDive(); break;
+        case "d": case "D":
+          if (app.modeOf() !== "free" && app.modeOf() !== "free_flight") startDive();
+          break;
         case "h": case "H": app.homeView(); break;
         case "Backspace": case "ArrowDown": e.preventDefault(); app.autopilot = null; app.popOut(); break;
         case "ArrowUp": app.wheel(-120); break;
-        case "w": case "W": if (app.modeOf() === "free") app.freeMove(0, 0, -1); else app.wheel(-90); break;
-        case "s": case "S": if (app.modeOf() === "free") app.freeMove(0, 0, 1); else app.wheel(90); break;
-        case "a": case "A": if (app.modeOf() === "free") app.freeMove(-1, 0, 0); else app.orbit(-14, 0); break;
-        case "d": case "D": if (app.modeOf() === "free") app.freeMove(1, 0, 0); else startDive(); break;
+        case "w": case "W": if (app.modeOf() === "free" || app.modeOf() === "free_flight") app.freeMove(0, 0, -1); else app.wheel(-90); break;
+        case "s": case "S": if (app.modeOf() === "free" || app.modeOf() === "free_flight") app.freeMove(0, 0, 1); else app.wheel(90); break;
+        case "a": case "A": if (app.modeOf() === "free" || app.modeOf() === "free_flight") app.freeMove(-1, 0, 0); else app.orbit(-14, 0); break;
         case "ArrowLeft": app.orbit(-14, 0); break; case "ArrowRight": app.orbit(14, 0); break;
         case "l": case "L": $("opt-labels").click(); break; case "o": case "O": $("opt-orbits").click(); break;
         case "f": case "F": if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); else document.exitFullscreen(); break;
         case "p": case "P": app.surface(app.node); break;
-        case "c": case "C": { const m = ["orbit","follow","surface","free"], i = m.indexOf(app.modeOf()); const next = m[(i + 1) % m.length]; if (next === "follow" || next === "surface") app[next === "follow" ? "follow" : "surface"](app.node); else app[next === "free" ? "freeMode" : "orbitMode"](); } break;
+        case "c": case "C": {
+          const cur = app.modeOf();
+          const next = cur === "orbit_target" ? "follow_target" :
+                       cur === "follow_target" ? "planet_surface" :
+                       cur === "planet_surface" ? "free_flight" :
+                       "orbit_target";
+          if (next === "follow_target") app.follow(app.node);
+          else if (next === "planet_surface") app.surface(app.node);
+          else if (next === "free_flight") app.freeMode();
+          else app.orbitMode();
+        } break;
         case "g": case "G": app.galaxyMap(); break;
         case "m": case "M": app.solarSystemMap(); break;
         case "v": case "V": app.microMode(!app.micro); break;
@@ -185,11 +279,19 @@
     // ---- per-frame HUD ----
     app.on("update", () => {
       const now = performance.now();
-      // free-flight WASD movement applied every frame
-      if (app.modeOf() === "free") {
+      // WASD movement: free-flight and surface modes.
+      const mode = app.modeOf();
+      if (mode === "free" || mode === "free_flight") {
         const vx = (keys["d"] || keys["D"] ? 1 : 0) - (keys["a"] || keys["A"] ? 1 : 0);
         const vz = (keys["s"] || keys["S"] ? 1 : 0) - (keys["w"] || keys["W"] ? 1 : 0);
         app.freeMove(vx, 0, vz);
+      } else if (mode === "planet_surface" || app.camera && app.camera.modeOf && app.camera.modeOf() === "planet_surface") {
+        const step = 0.5; // metres per frame of altitude/heading
+        if (keys["w"] || keys["W"]) app.camera.surface.altitude += step;
+        if (keys["s"] || keys["S"]) app.camera.surface.altitude = Math.max(0, app.camera.surface.altitude - step);
+        if (keys["a"] || keys["A"]) app.camera.surface.heading -= 0.02;
+        if (keys["d"] || keys["D"]) app.camera.surface.heading += 0.02;
+        app.camera.surface.altitude = Math.max(0, app.camera.surface.altitude);
       }
       // tooltip follows hover every frame
       const h = app.hover;
@@ -204,30 +306,55 @@
       const t = app.t, vis = U.Cosmo.visual(t), ep = U.Cosmo.epochAt(t);
       $("t-main").textContent = U.fmtTime(t);
       $("t-epoch").textContent = ep.name;
-      $("t-temp").textContent = U.fmtTemp(vis.T); $("t-z").textContent = vis.z > 1e4 ? U.fmtSci(vis.z) : vis.z < 0.005 ? "0" : vis.z.toFixed(vis.z < 10 ? 2 : 0);
-      $("t-size").textContent = app.uni ? U.fmtDist(app.uni.boxM * vis.a) : "-";
+      // Temperature: adaptive precision / scientific notation, never "0.0 K" for a nonzero value.
+      $("t-temp").textContent = fmtTempAdaptive(vis.T);
+      // Redshift z = 1/a - 1. Negative in the future (a > 1); never clamped to zero.
+      $("t-z").textContent = fmtZ(vis.z);
+      // Label the region size precisely: comoving side length of the periodic representative region.
+      $("t-size").textContent = app.uni ? "Region (comoving) " + U.fmtDist(app.uni.boxM * vis.a) : "-";
+      // Playback rate + horizon notice.
+      const rateEl = $("tl-rate");
+      if (rateEl) rateEl.textContent = "Rate: " + fmtRate(app.getRate()) + " · " + app.getPreset() + (app.getPlaying() ? " · playing" : " · paused");
       // PM3D scientific simulation stats
       if (app.pm3dState) {
         const statsEl = $("pm3d-stats");
         const ds = app.pm3dState.density_stats || {};
         statsEl.textContent =
           "a=" + app.pm3dState.a.toFixed(3) +
-          " z=" + app.pm3dState.z.toFixed(2) +
+          " z=" + fmtZ(app.pm3dState.z) +
           " t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr" +
           " ρ_rms=" + (ds.rms !== undefined ? ds.rms.toFixed(3) : "–") +
           " pts=" + app.pm3dState.returned_points + "/" + app.pm3dState.n_particles;
         $("pm3d-play").textContent = app.pm3dPlaying ? "Pause" : "Play";
       }
-      if (document.activeElement !== slider) slider.value = Math.round(app.s * 1000);
+      if (document.activeElement !== slider) slider.value = Math.round(app.scrubS * 1000);
       $("ep-name").textContent = ep.name; $("ep-text").textContent = ep.text;
-      document.body.classList.toggle("cinema", app.playing && app.node.kind === "universe");
+      document.body.classList.toggle("cinema", app.getPlaying() && app.node.kind === "universe");
       $("epoch-card").style.opacity = app.node.kind === "universe" || app.node.kind === "halo" ? 1 : 0;
+      showHorizonNotice();
       // breadcrumbs / info on focus change
       if (lastFocus !== app.node) { lastFocus = app.node; drawCrumbs(); drawInfo(); }
       if (app.node.kind === "star" || app.node.kind === "planet") { /* keep info fresh enough */ }
       // ruler: log10 of distance to focus
       const d = V.len(app.pos), lg = Math.log10(Math.max(d, 1)), lo = 3, hi = 26.5, f = U.clamp((lg - lo) / (hi - lo), 0, 1);
       $("ruler-mark").style.bottom = (f * 100) + "%"; $("ruler-val").style.display = "block"; $("ruler-val").textContent = U.fmtDist(d);
+    }
+    // Adaptive temperature formatting: avoid "0.0 K" for nonzero values; use scientific notation when tiny/huge.
+    function fmtTempAdaptive(T) {
+      if (!Number.isFinite(T)) return "–";
+      if (T === 0) return "0 K";
+      if (T < 1e-3 || T >= 1e6) return T.toExponential(2) + " K";
+      if (T < 1) return T.toExponential(3) + " K";
+      if (T < 100) return T.toFixed(2) + " K";
+      return T.toFixed(1) + " K";
+    }
+    // Redshift formatting: z = 1/a - 1; negative in the future (a > 1).
+    function fmtZ(z) {
+      if (!Number.isFinite(z)) return "–";
+      if (Math.abs(z) < 1e-6) return "0";
+      if (Math.abs(z) < 1) return z.toFixed(3);
+      if (Math.abs(z) < 1e4) return z.toFixed(2);
+      return z.toExponential(2);
     }
     const RT = [[1e4, "10 km"], [1.27e7, "Earth"], [1.4e9, "Sun"], [1.5e11, "1 AU"], [9.46e15, "1 light-year"], [3.1e17, "10 pc"], [1e21, "Galaxy"], [3.09e22, "1 Mpc"], [3.09e24, "100 Mpc"], [3e25, "Region"]];
     const rt = $("ruler-ticks"); RT.forEach(([m, l]) => { const li = document.createElement("li"); li.textContent = l; li.style.bottom = (((Math.log10(m) - 3) / (26.5 - 3)) * 100) + "%"; rt.appendChild(li); });
@@ -273,6 +400,8 @@
       }
       for (let i = used; i < labelPool.length; i++) labelPool[i].style.display = "none";
     }
+    // Initialize the playback UI (presets, rate, horizon notice).
+    updatePlaybackUI();
     return ui;
   };
 })(typeof window !== "undefined" ? window : globalThis);

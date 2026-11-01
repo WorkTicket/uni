@@ -10,7 +10,104 @@
     high:   { N: 128, keep: 0.7,  stars: 420000, scale: 1.0,  maxHalos: 30000 },
     ultra:  { N: 256, keep: 1.0,  stars: 700000, scale: 1.25, maxHalos: 45000 },
   };
-  const TOTAL_SECONDS = 96;       // default length of "Big Bang -> today" at 1x
+
+  // ---- presentation playback controller (separate from the authoritative physics clock) ----
+  // Controls how fast the viewer advances through *simulated physical time*.
+  // Rates are expressed as simulated seconds per wall-clock second.
+  const PLAYBACK_PRESETS = {
+    paused:     { label: "Paused",       rate: 0,      cinematic: false },
+    observe:    { label: "Observe",      rate: 3.15576e7 / 60,   cinematic: false },   // ~1 year per wall-second
+    explore:    { label: "Explore",      rate: 3.15576e7 * 6,    cinematic: false },   // ~6 years per wall-second
+    fast:       { label: "Fast Forward", rate: 3.15576e7 * 365,  cinematic: false },   // ~1 year per wall-second... actually 365 yr/sec
+    custom:     { label: "Custom",       rate: 1,        cinematic: false },
+    cinematic:  { label: "Cinematic Tour", rate: 3.15576e9,   cinematic: true },        // ~100 yr per wall-second
+  };
+
+  class PlaybackController {
+    constructor(app) {
+      this.app = app;
+      this.preset = "paused";
+      this.rate = 0;                 // simulated seconds per wall-clock second
+      this.customRate = 1;           // user-defined valid rate (sim seconds / wall second)
+      this.playing = false;
+      this.pauseOnInspect = false;   // user preference: pause when opening a detailed inspection view
+      this.horizonExtended = false;  // whether the user has extended the horizon this session
+    }
+    presetNames() { return Object.keys(PLAYBACK_PRESETS); }
+    preset(key) { return PLAYBACK_PRESETS[key] || PLAYBACK_PRESETS.paused; }
+    setPreset(key) {
+      const p = this.preset(key);
+      this.preset = key;
+      this.rate = key === "custom" ? this.customRate : p.rate;
+      this.applyRate();
+      return { preset: key, rate: this.rate, label: p.label, cinematic: !!p.cinematic, playing: this.playing };
+    }
+    setCustomRate(rate) {
+      const r = Number(rate);
+      if (!Number.isFinite(r) || r < 0) throw new Error("playback rate must be a non-negative number");
+      this.customRate = r;
+      if (this.preset === "custom") this.rate = r;
+      this.applyRate();
+      return { preset: "custom", rate: this.rate };
+    }
+    setRate(rate) { return this.setCustomRate(rate); }
+    applyRate() {
+      this.app.speed = this.rate; // app.render loop uses this.app.speed as the time advance factor
+      this.app.emit("playback-changed", { preset: this.preset, rate: this.rate, playing: this.playing });
+    }
+    play() {
+      if (this.app.U.Cosmo.atBoundary()) {
+        // At the horizon: do not auto-resume; require an explicit horizon extension.
+        this.playing = false;
+        this.applyRate();
+        this.app.emit("horizon-reached");
+        return { playing: false, horizonReached: true, message: "Reached current model horizon — extend to continue" };
+      }
+      this.playing = true;
+      this.applyRate();
+      this.app.emit("play", true);
+      return { playing: true, rate: this.rate };
+    }
+    pause() {
+      this.playing = false;
+      this.applyRate();
+      this.app.emit("play", false);
+      return { playing: false };
+    }
+    toggle() { return this.playing ? this.pause() : this.play(); }
+    // Advance simulated physical time by wall-clock dt. Returns true if advanced.
+    advance(dt) {
+      if (!this.playing || this.rate <= 0) return false;
+      const app = this.app;
+      const cosmo = app.U.Cosmo;
+      const dSim = dt * this.rate; // simulated seconds
+      if (dSim <= 0) return false;
+      // Advance the authoritative background clock while staying within the validated horizon.
+      const a = cosmo.a, t = cosmo.t;
+      // Target time = t + dSim; convert to scale factor via the table (clamped to horizon).
+      let tNext = t + dSim;
+      let aNext;
+      try { aNext = cosmo.aOfT(tNext); } catch (e) { aNext = cosmo.a_max; }
+      if (!Number.isFinite(aNext) || aNext <= 0) aNext = cosmo.a_max;
+      // Clamp to the validated horizon; pause when reached.
+      if (aNext >= cosmo.a_max) {
+        aNext = cosmo.a_max;
+        tNext = cosmo.tOfA(aNext);
+        cosmo.setState(aNext, tNext);
+        app.t = cosmo.t;
+        this.pause();
+        this.app.emit("horizon-reached");
+        return false;
+      }
+      cosmo.setState(aNext, tNext);
+      app.t = cosmo.t;
+      return true;
+    }
+    // Pause when a detailed inspection view is opened, if the user enabled that preference.
+    maybePauseOnInspect() {
+      if (this.pauseOnInspect && this.playing) this.pause();
+    }
+  }
 
   class App {
     constructor(canvas, opts) {
@@ -22,14 +119,15 @@
       this.chem = new U.Layers.ChemicalFieldLayer(this.R);
       this.simParticles = new U.Layers.ScientificParticleLayer(this.R);
       this.quality = this.opts.quality || "medium";       this.seed = 1; this.uni = null;
-      this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
+      this.t = U.Cosmo.t;          // authoritative cosmic time (seconds), synced with U.Cosmo
+      this.playing = false;        // mirrored by the playback controller
+      this.speed = 1;              // presentation rate (sim seconds per wall-second), set by controller
+      this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
+      this.scrubS = 0.0;           // presentation scrubber position in [0,1] (NOT the physics timebase)
       this.node = null; this.pos = [0, 0, 0]; this.q = Q.ident(); this.zoomAcc = 0; this.recenter = 0;
       this.mouse = { x: 0.5, y: 0.5, inside: false }; this.hover = null; this.lastPick = 0;
       this.exposure = 1; this.bloom = 0.38; this.autopilot = null; this.listeners = {};
-      this.camMode = "orbit";        // orbit | follow | surface | free | micro
-      this.followTarget = null;      // {node, t} for follow/surface tracking
-      this.followDist = 0;           // metres from target centre
-      this.freeYaw = 0; this.freePitch = 0; this.freeVel = [0, 0, 0]; this.freeSpeed = 20; // free-flight state
+      this.camMode = "orbit";        // orbit | follow | surface | free | micro (mirror of camera controller)
       this.simEnvs = null;           // planet index -> {liqW, atmOk} from the habitat simulation
       this.micro = false;            // microscopic/chemical-field view mode
       this.scientific = false;       // Scientific Simulation mode: renders actual PM3D state
@@ -39,6 +137,8 @@
       this.pm3dSpeed = 1;            // playback speed multiplier
       this.pm3dAmax = 10.0;          // max scale factor for playback
       this.pm3dLastStep = 0;         // last real-time step timestamp
+      this.playback = new PlaybackController(this);
+      this.camera = new U.CameraController(this);
       this.resize();
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
@@ -72,21 +172,42 @@
     lookQ(from, to) { return Q.lookAt(V.sub(to, from), [0, 1, 0]); }
 
     // ---- time ------------------------------------------------------------------------------------------
-    setS(s) { this.s = U.clamp(s, 0, 1); this.t = U.Cosmo.tOfS(this.s); }
-    setT(t) { this.setS(U.Cosmo.sOfT(t)); this.t = t; }
-    play() { this.playing = true; this.emit("play", true); }
-    pause() { this.playing = false; this.emit("play", false); }
+    // Authoritative cosmic time is owned by U.Cosmo (the physics clock). The presentation
+    // playback controller (this.playback) advances it. Navigation never changes cosmic time.
+    setT(t) { this.U.Cosmo.setState(this.U.Cosmo.aOfT(t), t); this.t = this.U.Cosmo.t; this.syncScrubber(); }
+    setS(s) { this.setT(this.U.Cosmo.tOfS(s)); }  // presentation-only: scrubber -> physical time
 
-    // ---- timeline control ----
-    stepForward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s + dt / TOTAL_SECONDS, 0, 1)); }
-    stepBackward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s - dt / TOTAL_SECONDS, 0, 1)); }
-    jumpToPresent() { this.pause(); this.setS(U.Cosmo.NOW_S); }
-    jumpToFuture(fraction = 0.5) { this.pause(); const f = U.clamp(fraction, 0, 1); this.setS(U.Cosmo.NOW_S + f * (1 - U.Cosmo.NOW_S)); }
-    setSpeed(speed) { this.speed = speed; }
+    // Expose playback controller for the UI.
+    getPlaying() { return this.playback.playing; }
+    getRate() { return this.playback.rate; }
+    getPreset() { return this.playback.preset; }
+
+    play() { return this.playback.play(); }
+    pause() { return this.playback.pause(); }
+    togglePlayback() { return this.playback.toggle(); }
+
+    // timeline control (physical-time steps; never resets the universe)
+    stepForward(dt = 0.05) { this.pause(); this.setT(U.clamp(this.t + dt, 0, this.U.Cosmo.tOfA(this.U.Cosmo.a_max))); }
+    stepBackward(dt = 0.05) { this.pause(); this.setT(Math.max(0, this.t - dt)); }
+    jumpToPresent() { this.pause(); this.setT(this.U.Cosmo.tOfA(1)); }
+    jumpToFuture(fraction = 0.5) { this.pause(); const aMax = this.U.Cosmo.a_max; const tMax = this.U.Cosmo.tOfA(aMax); const tNow = this.U.Cosmo.tOfA(1); this.setT(tNow + U.clamp(fraction, 0, 1) * (tMax - tNow)); }
+    setSpeed(speed) { this.playback.setRate(speed); }
+
+    // Extend the validated future horizon and resume from the current state.
+    extendHorizon(new_a_max) {
+      const r = this.U.Cosmo.extendHorizon(new_a_max);
+      this.t = this.U.Cosmo.t;
+      this.syncScrubber();
+      this.playback.horizonExtended = true;
+      this.emit("horizon-extended", r);
+      return r;
+    }
+
+    syncScrubber() { this.scrubS = this.U.Cosmo.sOfT(this.t); }
 
     // checkpoints (named saved timeline states)
-    checkpoint(id) { this._checkpoints = this._checkpoints || {}; this._checkpoints[id] = { s: this.s, t: this.t, node: this.node, pos: this.pos.slice(), q: this.q.slice() }; return this._checkpoints[id]; }
-    returnToCheckpoint(id) { const cp = this._checkpoints && this._checkpoints[id]; if (!cp) return false; this.pause(); this.setS(cp.s); this.t = cp.t; this.node = cp.node; this.pos = cp.pos.slice(); this.q = cp.q.slice(); this.recenter = 1.0; return true; }
+    checkpoint(id) { this._checkpoints = this._checkpoints || {}; this._checkpoints[id] = { t: this.t, a: this.U.Cosmo.a, node: this.node, pos: this.pos.slice(), q: this.q.slice() }; return this._checkpoints[id]; }
+    returnToCheckpoint(id) { const cp = this._checkpoints && this._checkpoints[id]; if (!cp) return false; this.pause(); this.setT(cp.t); this.node = cp.node; this.pos = cp.pos.slice(); this.q = cp.q.slice(); this.recenter = 1.0; return true; }
     listCheckpoints() { return this._checkpoints ? Object.keys(this._checkpoints) : []; }
 
     // ---- chain & frames ---------------------------------------------------------------------------------
@@ -130,13 +251,13 @@
       this.pos = V.add(this.pos, n.local); this.setNode(n.parent); this.recenter = 1.2;
     }
     // ---- camera modes ---------------------------------------------------------------
-    follow(node, distM) { this.camMode = "follow"; this.followTarget = { node, t: this.t }; this.followDist = distM || this.limits(node).pop; this.recenter = 1.0; }
-    surface(node) { this.camMode = "surface"; this.followTarget = { node, t: this.t }; const lim = this.limits(node); this.followDist = lim.min * 1.15; this.recenter = 1.0; }
-    orbitMode() { this.camMode = "orbit"; this.followTarget = null; }
-    freeMode() { this.camMode = "free"; this.followTarget = null; this.freeYaw = 0; this.freePitch = 0; this.freeVel = [0, 0, 0]; }
-    freeMove(x, y, z) { this.freeVel = [x, y, z]; }
-    freeLook(dx, dy) { this.freeYaw += dx * 0.004; this.freePitch = U.clamp((this.freePitch || 0) + dy * 0.004, -1.45, 1.45); this.q = Q.mul(Q.axisAngle([0, 1, 0], this.freeYaw), Q.axisAngle([1, 0, 0], this.freePitch)); this.recenter = 0; }
-    microMode(on) { this.micro = !!on; }
+    follow(node, distM) { this.camera.followTarget(node, distM); this.camMode = this.camera.modeOf(); }
+    surface(node) { this.camera.surface(node); this.camMode = this.camera.modeOf(); }
+    orbitMode() { this.camera.orbitTarget(this.node); this.camMode = this.camera.modeOf(); }
+    freeMode() { this.camera.freeFlight(); this.camMode = this.camera.modeOf(); }
+    freeMove(x, y, z) { this.camera.freeMove(x, y, z); }
+    freeLook(dx, dy) { this.camera.look(dx, dy); }
+    microMode(on) { if (on) this.camera.microscope(this.node); else this.camera.orbitTarget(this.node); this.camMode = this.camera.modeOf(); this.micro = !!on; }
     setSimEnvs(envs) { this.simEnvs = envs || null; this.emit("sim-envs", envs); }
 
     // ---- Scientific Simulation mode ------------------------------------------------
@@ -240,26 +361,25 @@
         await this.pm3dStatus();
       } catch (e) { /* ignore transient errors */ }
     }
-    modeOf() { return this.camMode; }
+    modeOf() { return this.camera.modeOf(); }
 
     // ---- camera transitions (spec: resolve position -> bounding radius -> framing distance -> interpolate) ----
     // framing distance from FOV so the object's bounding sphere just fits the view
     frameDist(radiusM) { const f = 1 / Math.tan(FOV / 2); return radiusM / Math.tan(FOV / 2) * 1.15; }
 
     // galaxy map: strategic overview framing the whole simulated region / halo population
-    galaxyMap() { this.camMode = "orbit"; this.followTarget = null; const n = this.uni.root; this.flyTo(n); }
+    galaxyMap() { this.camera.galaxyMap(); this.camMode = this.camera.modeOf(); }
     // solar system map: frame the current star's planetary system
     solarSystemMap() {
       const st = this.node.kind === "star" ? this.node : (this.node.parent && this.node.parent.kind === "star" ? this.node.parent : null);
       if (!st) return;
-      this.camMode = "orbit"; this.followTarget = null; this.flyTo(st);
+      this.camera.systemMap(); this.camMode = this.camera.modeOf();
     }
 
     // resolve the follow/surface target's current world position (metres, universe frame)
     followPosition() {
-      const ft = this.followTarget; if (!ft) return null;
-      const chain = ft.node.chain(); const cams = this.camFrames(chain);
-      // the camera frame of the focused node is its position in the universe frame
+      const t = this.camera.getTarget(); if (!t) return null;
+      const chain = t.node.chain(); const cams = this.camFrames(chain);
       return cams[0];
     }
     // resolve a hover target into a node (creating it lazily)
@@ -288,24 +408,9 @@
     }
 
     // ---- input ------------------------------------------------------------------------------------------
-    orbit(dx, dy) {
-      const k = 0.0045; this.autopilot = null;
-      let up = [0, 1, 0]; if (this.node.kind === "galaxy") up = Q.rotate(this.node.q, [0, 1, 0]);
-      const right = Q.rotate(this.q, [1, 0, 0]);
-      const rot = Q.mul(Q.axisAngle(up, -dx * k), Q.axisAngle(right, -dy * k));
-      this.pos = Q.rotate(rot, this.pos); this.q = Q.normalize(Q.mul(rot, this.q)); this.recenter = 0;
-      this.tilt = this.tilt || 0;
-    }
-    look(dx, dy) { this.tilt = U.clamp((this.tilt || 0) + dy * 0.004, 0, 1.45); }
-    wheel(deltaY, mx, my) {
-      this.autopilot = null;
-      const amt = -deltaY * 0.0016;
-      if (amt > 0 && this.hover) {                       // zooming in on something that is not the current focus
-        const h = this.hover; const n = this.nodeFromHover(h);
-        if (n && n !== this.node) { this.focusOn(n); }
-      }
-      this.zoomAcc += amt;
-    }
+    orbit(dx, dy) { this.camera.orbit(dx, dy); }
+    look(dx, dy) { this.camera.look(dx, dy); }
+    wheel(deltaY, mx, my) { this.camera.wheel(deltaY, mx, my); }
 
     // ---- picking ----------------------------------------------------------------------------------------
     pick() {
@@ -401,11 +506,10 @@
     // ---- frame ------------------------------------------------------------------------------------------
     update(dt) {
       this.time += dt;
-      // cosmic clock
-      if (this.playing) {
-        this.setS(this.s + dt * this.speed / TOTAL_SECONDS);
-        if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
-      }
+      // cosmic clock: driven by the presentation playback controller, never by navigation.
+      this.playback.advance(dt);
+      this.t = this.U.Cosmo.t;
+      this.syncScrubber();
       // PM3D continuous playback (actual solver state)
       if (this.pm3dPlaying) {
         this.pm3dTick();
@@ -427,47 +531,9 @@
           if (nd !== dist) this.pos = V.scale(this.pos, nd / dist);
         }
       }
-      // keep the camera outside the minimum distance (e.g. planet moved)
-      { const lim = this.limits(this.node), d = V.len(this.pos); if (d < lim.min) this.pos = V.scale(this.pos, lim.min / Math.max(d, 1e-9)); }
-      // follow / surface tracking: hold a stable offset from the tracked body, keep it centred
-      if ((this.camMode === "follow" || this.camMode === "surface") && this.followTarget && this.followTarget.node) {
-        const ft = this.followTarget.node;
-        const root = this.uni ? this.uni.root : null;
-        const rootRef = root ? root : this.node;
-        if (ft !== this.node) {
-          // camera position in the universe frame
-          const camU = V.add(this.pos.slice(), this.node.posIn(rootRef));
-          // express it relative to the follow target
-          this.pos = V.sub(camU, ft.posIn(rootRef));
-          this.setNode(ft);
-          this.recenter = 1.0;
-        }
-        const lim = this.limits(ft);
-        const d = V.len(this.pos);
-        let mind = this.camMode === "surface" ? Math.max(lim.min * 1.1, ft.size * 1.02) : lim.min;
-        if (d < mind) this.pos = V.scale(this.pos, mind / Math.max(d, 1e-9));
-        if (d > lim.pop * 4) this.pos = V.scale(this.pos, (lim.pop * 4) / Math.max(d, 1e-9));
-        this.recenter = Math.max(this.recenter, 0.3);
-      }
-      // free flight: translate by yaw/pitch, apply velocity, keep orientation user-controlled
-      if (this.camMode === "free") {
-        const basis = Q.basis(this.q);
-        const fwd = basis[2]; const rgt = basis[0]; const up = basis[1];
-        const move = V.add(V.add(V.scale(fwd, this.freeVel[2]), V.scale(rgt, this.freeVel[0])), V.scale(up, this.freeVel[1]));
-        this.pos = V.add(this.pos, V.scale(move, dt * this.freeSpeed));
-        // free flight orientation is controlled by mouse look (applied below via input), not recentred
-      }
-      // recentre on the focus
-      if (this.recenter > 0) {
-        this.recenter -= dt;
-        const target = Q.lookAt(V.scale(this.pos, -1), this.node.kind === "galaxy" ? Q.rotate(this.node.q, [0, 1, 0]) : [0, 1, 0]);
-        this.q = Q.slerp(this.q, target, 1 - Math.exp(-dt * 4.5));
-      } else if (this.node.kind !== "universe" || true) {
-        // keep looking at the focus unless the user tilted away (planet horizon mode)
-        const target = Q.lookAt(V.scale(this.pos, -1), [0, 1, 0]);
-        const d = V.len(this.pos), nk = this.node.kind;
-        if ((nk === "planet" || nk === "moon") && d < this.node.size * 6) { /* tilt mode: orientation stays user controlled */ }
-      }
+      // ---- centralized camera controller (one mode owns position/rotation) ----
+      this.camera.update(dt);
+      this.camMode = this.camera.modeOf();
       // planets: keep the camera co-rotating with the surface when close
       // hover picking at ~20 Hz
       if (this.time - this.lastPick > 0.05) { this.lastPick = this.time; this.pick(); }

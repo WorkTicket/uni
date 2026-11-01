@@ -92,6 +92,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 input[type=range]::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 12px rgba(255,255,255,.9)}
 .stats{display:flex;gap:18px;font-size:12px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden}
 .stats b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;margin-left:3px}
+#tl-rate{color:var(--mut);font-size:12px;margin-top:4px;text-align:center}
+.notice{color:var(--warm);font-size:12px;margin-top:6px;text-align:center;background:rgba(255,191,128,.1);border:1px solid rgba(255,191,128,.4);border-radius:10px;padding:6px 10px;display:inline-block}
 #epoch-card{position:fixed;left:50%;transform:translateX(-50%);bottom:116px;width:min(560px,calc(100% - 40px));padding:10px 16px;text-align:center;z-index:4;transition:opacity .4s}
 #epoch-card b{font-size:15px}
 #epoch-card p{margin:3px 0 0;color:var(--mut);font-size:12.5px}
