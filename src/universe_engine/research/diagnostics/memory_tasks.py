@@ -109,7 +109,9 @@ class DelayedCueTask:
             if at == "move":
                 reward += -0.05
         elif self.phase == "response":
-            direction = action.parameters.get("direction", 0)  # -1 left, +1 right, 0 wait
+            direction = action.parameters.get("direction", 0)
+            if "dx" in action.parameters:
+                direction = int(np.sign(action.parameters["dx"]))
             if self.cue_side is not None:
                 correct_dir = -1 if self.cue_side == 0 else 1
                 if direction == correct_dir:
