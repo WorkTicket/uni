@@ -3,6 +3,7 @@ and stream its snapshots over a WebSocket. One session per app instance.
 Start:  universe-observatory --port 8000   then open http://127.0.0.1:8000/   (3D universe viewer; /lab = 1D laboratory viewer)"""
 import argparse
 import asyncio
+import json
 import os
 import re
 import threading
@@ -749,6 +750,13 @@ def create_app(save_dir="runs/observatory"):
             habitat_holder[hid] = habitat
         return {"id": oid, "habitat_id": hid, "state": org.inspector_state()}
 
+    @app.get("/api/organism/saves")
+    def organism_saves():
+        org_dir = save_root / "organisms"
+        if not org_dir.exists():
+            return {"saves": []}
+        return {"saves": sorted(p.stem for p in org_dir.glob("*.json"))}
+
     @app.get("/api/organism/{oid}")
     def organism_get(oid: str):
         if not ORGANISM_ID.match(oid):
@@ -789,6 +797,90 @@ def create_app(save_dir="runs/observatory"):
         if oid not in organism_holder:
             raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
         return {"id": oid, "checkpoint": organism_holder[oid].checkpoint()}
+
+    # ---- persistent organism save / load (disk-backed, process-restart safe) ----
+    ORGANISM_SAVE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+    MAX_ORGANISM_CHECKPOINT_BYTES = 50 * 1024 * 1024
+    ORGANISM_SCHEMA = "persistent-organism/v1"
+    ORGANISM_REQUIRED_KEYS = ("identity", "t_gyr", "habitat", "body",
+                              "memory", "controller", "self_model")
+
+    @app.post("/api/organism/{oid}/save")
+    def organism_save(oid: str, body: dict = Body(default={})):
+        """Persist an organism checkpoint to disk (process-restart safe).
+
+        Body: { "id": str }  (optional stable checkpoint id)
+        """
+        if not ORGANISM_ID.match(oid):
+            raise ParamError("invalid organism id")
+        if oid not in organism_holder:
+            raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
+        cid = str(body.get("id") or time.strftime("org-%Y%m%dT%H%M%S"))
+        if not ORGANISM_SAVE_ID.match(cid):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        org = organism_holder[oid]
+        cp = org.checkpoint()
+        if cp.get("schema") != ORGANISM_SCHEMA:
+            raise ParamError(f"unsupported organism checkpoint schema {cp.get('schema')!r}")
+        payload = json.dumps(cp).encode("utf-8")
+        if len(payload) > MAX_ORGANISM_CHECKPOINT_BYTES:
+            raise ParamError("organism checkpoint exceeds size limit")
+        org_dir = save_root / "organisms"
+        org_dir.mkdir(parents=True, exist_ok=True)
+        path = org_dir / f"{cid}.json"
+        tmp = org_dir / f"{cid}.tmp.json"
+        tmp.write_text(json.dumps(cp, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+        return {"id": cid, "schema": cp["schema"], "size_bytes": len(payload),
+                "path": f"organisms/{cid}.json", "t_gyr": cp["t_gyr"],
+                "organism_id": oid}
+
+    @app.post("/api/organism/load")
+    def organism_load(body: dict = Body(...)):
+        """Restore an organism from a disk-backed checkpoint.
+
+        Body: { "id": str, "organism_id": str | null }
+        Rebuilds the shared habitat once from the checkpoint, then reconnects
+        the organism to it by stable ID. Safe across a service restart.
+        """
+        cid = str(body.get("id", ""))
+        if not ORGANISM_SAVE_ID.match(cid):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        org_dir = save_root / "organisms"
+        path = org_dir / f"{cid}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"no organism checkpoint named {cid!r}")
+        raw = path.read_text(encoding="utf-8")
+        if len(raw.encode("utf-8")) > MAX_ORGANISM_CHECKPOINT_BYTES:
+            raise ParamError("organism checkpoint exceeds size limit")
+        try:
+            cp = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ParamError(f"organism checkpoint is not valid JSON: {exc}")
+        if not isinstance(cp, dict) or cp.get("schema") != ORGANISM_SCHEMA:
+            raise ParamError(f"unsupported organism checkpoint schema {cp.get('schema')!r}")
+        for key in ORGANISM_REQUIRED_KEYS:
+            if key not in cp:
+                raise ParamError(f"organism checkpoint missing required key {key!r}")
+        hab_cp = cp.get("habitat", {})
+        if not isinstance(hab_cp, dict) or "patches" not in hab_cp:
+            raise ParamError("organism checkpoint habitat is incomplete")
+        seed = int(hab_cp.get("seed", 0))
+        n_patches = int(hab_cp.get("n_patches", len(hab_cp.get("patches", [])) or 8))
+        network = make_default_network()
+        fallback_planet = Planet(PlanetSpec(), t_gyr=float(hab_cp.get("t_gyr", 4.5)))
+        habitat = Habitat.restore(fallback_planet, network, hab_cp,
+                                  seed=seed, n_patches=n_patches)
+        hid = f"hab-for-{cid}"
+        habitat_holder[hid] = habitat
+        oid = str(body.get("organism_id") or cp.get("identity", {}).get("organism_id") or cid)
+        if not ORGANISM_ID.match(oid):
+            oid = cid
+        if oid in organism_holder:
+            raise ParamError(f"organism {oid!r} already exists")
+        org = PersistentOrganism.restore(cp, habitat)
+        organism_holder[oid] = org
+        return {"id": oid, "habitat_id": hid, "state": org.inspector_state()}
 
     # ---- scientific 3D PM3D cosmology simulation (actual numerical state) ----
     PM3D_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")

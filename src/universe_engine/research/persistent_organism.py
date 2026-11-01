@@ -97,14 +97,52 @@ class EpisodicMemory:
         self.entries = []
 
     def to_dict(self) -> dict:
+        """Lightweight inspector representation (bounded, lossy).
+
+        Used by the Mind Inspector so UI payloads stay small. Not a
+        lossless checkpoint: only the most recent `limit` entries survive.
+        """
         return {
             "capacity": self.capacity,
             "n_entries": len(self.entries),
             "entries": [asdict(e) for e in self.entries[-50:]],
         }
 
+    def inspector_summary(self, limit: int = 50) -> dict:
+        """Lightweight inspector representation of the most recent entries.
+
+        Mirrors `to_dict()` for backward compatibility but makes the
+        inspector/lossy intent explicit. Callers that need full fidelity
+        should use `checkpoint()` instead.
+        """
+        return {
+            "capacity": self.capacity,
+            "n_entries": len(self.entries),
+            "entries": [asdict(e) for e in self.entries[-int(limit):]],
+        }
+
+    def checkpoint(self) -> dict:
+        """Lossless checkpoint representation of all retained entries.
+
+        Every entry currently held in memory (up to capacity) is serialized,
+        so restore() can reconstruct memory exactly.
+        """
+        return {
+            "schema": "episodic-memory/v1",
+            "capacity": self.capacity,
+            "n_entries": len(self.entries),
+            "entries": [asdict(e) for e in self.entries],
+        }
+
     @classmethod
     def restore(cls, data: dict) -> "EpisodicMemory":
+        """Restore memory from a lossless checkpoint() dict.
+
+        Maintains compatibility with legacy `to_dict()` checkpoints (which
+        only carried the last 50 entries): restoring those yields only the
+        entries that were serialized, which is the honest, documented
+        behavior for old checkpoints.
+        """
         m = cls(capacity=int(data.get("capacity", 500)))
         m.entries = [MemoryEntry(**e) for e in data.get("entries", [])]
         return m
@@ -439,7 +477,7 @@ class PersistentOrganism:
                 "sensorimotor_map": {k: v.tolist() for k, v in
                                      self.self_model.body.sensorimotor_map.items()},
             },
-            "memory": self.memory.to_dict(),
+            "memory": self.memory.checkpoint(),
             "controller": self._controller_inspector(),
             "developmental_history": [
                 {"t_gyr": e.t_gyr, "event": e.event, "details": e.details}
@@ -477,7 +515,7 @@ class PersistentOrganism:
             "lifetime_reward": self.lifetime_reward,
             "total_cost_paid": self.total_cost_paid,
             "body": self.body.to_dict(),
-            "memory": self.memory.to_dict(),
+            "memory": self.memory.checkpoint(),
             "controller": self.controller.checkpoint(),
             "self_model": self.self_model.checkpoint(),
             "developmental_history": [
@@ -514,10 +552,11 @@ class PersistentOrganism:
                                details=e.get("details", {}))
             for e in data.get("developmental_history", [])
         ]
-        org.habitat = Habitat.restore(
-            habitat.planet, habitat.network, data.get("habitat", {}),
-            seed=habitat.seed, n_patches=habitat.n_patches,
-        )
+        # Rehydrate the shared habitat in place so all organisms restored from
+        # the same world refer to ONE persistent Habitat object (no duplicated
+        # independent habitats or resource inventories).
+        habitat.rehydrate(data.get("habitat", {}), seed=habitat.seed)
+        org.habitat = habitat
         org._link_to_patch()
         org.t_gyr = org.habitat.t_gyr
         return org

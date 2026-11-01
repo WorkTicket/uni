@@ -217,3 +217,83 @@ class Planet:
         self._equilibrate()
         self.history.append(self.environment())
         return self.history
+
+    # ---- versioned checkpoint / restore --------------------------------------
+    def checkpoint(self) -> dict:
+        """Lossless, versioned checkpoint of the mutable planetary state.
+
+        Captures every field that affects subsequent climate calculations:
+        the clock (t_gyr), the temperature profile (T), the atmospheric
+        CO2 partial pressure (pco2), the convergence flag, and the full
+        evolution history. The fixed PlanetSpec is captured by value so a
+        restored planet reproduces the same physics without depending on the
+        original spec object.
+        """
+        return {
+            "schema": "planet/v1",
+            "t_gyr": float(self.t_gyr),
+            "T": self.T.tolist(),
+            "pco2": float(self.pco2),
+            "converged": bool(getattr(self, "converged", True)),
+            "history": [dict(e) for e in self.history],
+            "spec": {
+                "mass_mearth": float(self.spec.mass_mearth),
+                "a_au": float(self.spec.a_au),
+                "ecc": float(self.spec.ecc),
+                "obliquity_deg": float(self.spec.obliquity_deg),
+                "ocean_fraction": float(self.spec.ocean_fraction),
+                "albedo_cloud_open": float(self.spec.albedo_cloud_open),
+                "pco2_bar": float(self.spec.pco2_bar),
+                "pn2_bar": float(self.spec.pn2_bar),
+                "alkalinity_eq_per_l": float(self.spec.alkalinity_eq_per_l),
+                "tectonics": str(self.spec.tectonics),
+                "has_surface_water": bool(self.spec.has_surface_water),
+                "seed": int(self.spec.seed),
+                "star": {
+                    "mass_msun": float(self.spec.star.mass_msun),
+                    "age_gyr_at_start": float(self.spec.star.age_gyr_at_start),
+                },
+            },
+        }
+
+    @classmethod
+    def restore(cls, data: dict) -> "Planet":
+        """Restore a planet from a lossless checkpoint() dict.
+
+        Rebuilds the Planet from its spec and then reinstates the mutable
+        climate state (T, pco2, t_gyr, history) so that subsequent
+        _equilibrate() / evolve() calls reproduce uninterrupted execution.
+        Recreating the same initial seed does NOT reproduce the advanced
+        state; the checkpointed T and pco2 are authoritative.
+        """
+        spec = PlanetSpec(
+            mass_mearth=float(data["spec"]["mass_mearth"]),
+            a_au=float(data["spec"]["a_au"]),
+            ecc=float(data["spec"]["ecc"]),
+            obliquity_deg=float(data["spec"]["obliquity_deg"]),
+            ocean_fraction=float(data["spec"]["ocean_fraction"]),
+            albedo_cloud_open=float(data["spec"]["albedo_cloud_open"]),
+            pco2_bar=float(data["spec"]["pco2_bar"]),
+            pn2_bar=float(data["spec"]["pn2_bar"]),
+            alkalinity_eq_per_l=float(data["spec"]["alkalinity_eq_per_l"]),
+            tectonics=str(data["spec"]["tectonics"]),
+            has_surface_water=bool(data["spec"]["has_surface_water"]),
+            seed=int(data["spec"]["seed"]),
+            star=StarSpec(
+                mass_msun=float(data["spec"]["star"]["mass_msun"]),
+                age_gyr_at_start=float(data["spec"]["star"]["age_gyr_at_start"]),
+            ),
+        )
+        p = cls.__new__(cls)
+        p.spec = spec
+        p.t_gyr = float(data["t_gyr"])
+        p.x = -1 + (np.arange(p.N) + 0.5) * 2 / p.N
+        p.xe = -1 + np.arange(1, p.N) * 2 / p.N
+        p.shape = annual_mean_insolation_shape(p.x, spec.obliquity_deg)
+        p.T = np.array(data["T"], dtype=float)
+        p.pco2 = float(data["pco2"])
+        p.history = [dict(e) for e in data.get("history", [])]
+        p._C = (spec.ocean_fraction * 2.9e8 + (1 - spec.ocean_fraction) * 1.0e7) * np.ones(p.N)
+        p._D = 0.55
+        p.converged = bool(data.get("converged", True))
+        return p

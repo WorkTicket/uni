@@ -315,6 +315,8 @@ class Habitat:
                 "pool": self.protocells.pool, "t": self.protocells.t,
                 "events": dict(self.protocells.events),
                 "max_cells": self.protocells.max_cells,
+                "rng": {"bit_generator": self.protocells.rng.bit_generator.__class__.__name__,
+                        "state": self.protocells.rng.bit_generator.state},
             },
             "replicators": None if self.replicators is None else {
                 "counts": {k: int(v) for k, v in self.replicators.counts.items()},
@@ -322,6 +324,10 @@ class Habitat:
                 "mu": self.replicators.mu, "supplied": self.replicators.supplied,
                 "removed": self.replicators.removed,
                 "lineage": self.replicators.lineage,
+                "events": dict(self.replicators.events),
+                "initial_units": self.replicators.initial_units,
+                "rng": {"bit_generator": self.replicators.rng.bit_generator.__class__.__name__,
+                        "state": self.replicators.rng.bit_generator.state},
             },
             "replicator_per_cell": self.replicator_per_cell,
             "cell_monomers": self.cell_monomers,
@@ -331,6 +337,7 @@ class Habitat:
                                    if self._init_element_totals is not None else None),
                 "charge": self._init_charge,
             },
+            "planet": self.planet.checkpoint(),
             "rng": {"bit_generator": self.rng.bit_generator.__class__.__name__,
                     "state": self.rng.bit_generator.state},
         }
@@ -338,7 +345,6 @@ class Habitat:
     @classmethod
     def restore(cls, planet: Planet, network: Network, data: Dict, seed: int = 0, n_patches: int = 8):
         hab = cls.__new__(cls)
-        hab.planet = planet
         hab.network = network
         hab.n_patches = n_patches
         hab.seed = seed
@@ -352,6 +358,15 @@ class Habitat:
         hab.t_gyr = float(data["t_gyr"])
         hab.species_names = list(data["species"])
         hab.n_spec = len(hab.species_names)
+
+        # Restore the planet from its checkpointed mutable state when
+        # available, so the advanced climate state (T, pco2, t_gyr) survives
+        # a restore boundary rather than being regenerated from a fresh seed.
+        pd = data.get("planet")
+        if pd is not None:
+            hab.planet = Planet.restore(pd)
+        else:
+            hab.planet = planet
         hab.patches = []
         for i, pd in enumerate(data["patches"]):
             hab.patches.append(Patch(
@@ -371,6 +386,12 @@ class Habitat:
                                         max_cells=pw.get("max_cells", 2000))
         hab.protocells.t = pw["t"]
         hab.protocells.events = dict(pw.get("events", {}))
+        if pw.get("rng"):
+            bg = getattr(np.random, pw["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = pw["rng"]["state"]
+                hab.protocells.rng = np.random.Generator(bit_gen)
         hab.replicators = None
         rep = data.get("replicators")
         if rep and rep.get("counts"):
@@ -383,7 +404,14 @@ class Habitat:
             hab.replicators.supplied = int(rep.get("supplied", 0))
             hab.replicators.removed = int(rep.get("removed", 0))
             hab.replicators.lineage = dict(rep.get("lineage", {}))
-            hab.replicators.initial_units = hab.replicators.units()
+            hab.replicators.events = dict(rep.get("events", {"replications": 0, "decays": 0, "mutants": 0}))
+            hab.replicators.initial_units = int(rep.get("initial_units", hab.replicators.initial_units))
+            if rep.get("rng"):
+                bg = getattr(np.random, rep["rng"]["bit_generator"], None)
+                if bg is not None:
+                    bit_gen = bg()
+                    bit_gen.state = rep["rng"]["state"]
+                    hab.replicators.rng = np.random.Generator(bit_gen)
         hab.replicator_per_cell = {int(k): dict(v) for k, v in data.get("replicator_per_cell", {}).items()}
         hab.cell_monomers = {int(k): int(v) for k, v in data.get("cell_monomers", {}).items()}
         hab._ledger_error = float(data.get("mass_ledger_error", 0.0))
@@ -394,3 +422,82 @@ class Habitat:
         else:
             hab._reset_ledger()
         return hab
+
+    def rehydrate(self, data: Dict, seed: int = 0) -> "Habitat":
+        """Rehydrate this habitat instance in place from checkpoint data.
+
+        Used by PersistentOrganism.restore so that multiple organisms restored
+        from the same world share a single Habitat object (one persistent
+        identity) rather than each getting a duplicated independent habitat.
+        """
+        self.network = data.get("network", self.network)
+        self.seed = int(data.get("seed", seed))
+        self.rng = np.random.default_rng(self.seed)
+        if data.get("rng"):
+            bg = getattr(np.random, data["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = data["rng"]["state"]
+                self.rng = np.random.Generator(bit_gen)
+        self.t_gyr = float(data["t_gyr"])
+        self.species_names = list(data["species"])
+        self.n_spec = len(self.species_names)
+
+        pd = data.get("planet")
+        if pd is not None:
+            self.planet = Planet.restore(pd)
+        self.patches = []
+        for i, pd in enumerate(data["patches"]):
+            self.patches.append(Patch(
+                index=i, c=np.array(pd["c"], dtype=float),
+                temperature_K=pd["temperature_K"], pH=pd["pH"],
+                liquid_water=bool(pd["liquid_water"]),
+                nutrient_mol=pd["nutrient_mol"], waste_mol=pd["waste_mol"], volume_L=1.0,
+            ))
+        cells = [
+            Protocell(A=c["A"], V=c["V"], N=c["N"],
+                      lineage=c.get("lineage", 0), gen=c.get("gen", 0),
+                      alive=bool(c.get("alive", True)), fate=c.get("fate", ""))
+            for c in data["protocells"]
+        ]
+        pw = data["protocell_world"]
+        self.protocells = ProtocellWorld(cells=cells, pool_molecules=pw["pool"], seed=self.seed,
+                                         max_cells=pw.get("max_cells", 2000))
+        self.protocells.t = pw["t"]
+        self.protocells.events = dict(pw.get("events", {}))
+        if pw.get("rng"):
+            bg = getattr(np.random, pw["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = pw["rng"]["state"]
+                self.protocells.rng = np.random.Generator(bit_gen)
+        self.replicators = None
+        rep = data.get("replicators")
+        if rep and rep.get("counts"):
+            rate_fn = duplex_mechanism(T=self.patches[0].temperature_K, volume_l=1.0)
+            self.replicators = Population(
+                counts={k: int(v) for k, v in rep["counts"].items()}, pool=int(rep.get("pool", 0)),
+                rate_fn=rate_fn, mu=float(rep.get("mu", 0.0)), seed=self.seed,
+            )
+            self.replicators.t = float(rep.get("t", 0.0))
+            self.replicators.supplied = int(rep.get("supplied", 0))
+            self.replicators.removed = int(rep.get("removed", 0))
+            self.replicators.lineage = dict(rep.get("lineage", {}))
+            self.replicators.events = dict(rep.get("events", {"replications": 0, "decays": 0, "mutants": 0}))
+            self.replicators.initial_units = int(rep.get("initial_units", self.replicators.initial_units))
+            if rep.get("rng"):
+                bg = getattr(np.random, rep["rng"]["bit_generator"], None)
+                if bg is not None:
+                    bit_gen = bg()
+                    bit_gen.state = rep["rng"]["state"]
+                    self.replicators.rng = np.random.Generator(bit_gen)
+        self.replicator_per_cell = {int(k): dict(v) for k, v in data.get("replicator_per_cell", {}).items()}
+        self.cell_monomers = {int(k): int(v) for k, v in data.get("cell_monomers", {}).items()}
+        self._ledger_error = float(data.get("mass_ledger_error", 0.0))
+        baseline = data.get("mass_ledger_baseline")
+        if baseline and baseline.get("element_totals") is not None:
+            self._init_element_totals = np.array(baseline["element_totals"], dtype=float)
+            self._init_charge = float(baseline.get("charge", 0.0))
+        else:
+            self._reset_ledger()
+        return self
