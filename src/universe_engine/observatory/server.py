@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import re
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -12,11 +13,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .session import PRESETS, ParamError, Session
+from ..multiverse import MultiverseManager, MultiverseError
 
 STATIC = Path(__file__).parent / "static"
 MAX_STEPS_PER_REQUEST = 10_000
 DEFAULT_COSMOLOGY = {"H0_km_s_Mpc": 67.4, "Omega_m": 0.315, "Omega_r": 0.000092, "Omega_Lambda": 0.684908, "spectral_index": 0.965}
 SAVE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+UNIVERSE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def load_cosmology():
@@ -40,6 +43,7 @@ def create_app(save_dir="runs/observatory"):
     app = FastAPI(title="Universe Observatory", version="0.1")
     holder = {"session": Session("zeldovich")}
     save_root = Path(save_dir)
+    multiverse = MultiverseManager(save_dir.parent / "multiverse")
 
     @app.exception_handler(ParamError)
     async def _param_error(request, exc):
@@ -48,6 +52,10 @@ def create_app(save_dir="runs/observatory"):
     @app.exception_handler(RuntimeError)
     async def _runtime_error(request, exc):
         return JSONResponse({"error": str(exc)}, status_code=409)
+
+    @app.exception_handler(MultiverseError)
+    async def _multiverse_error(request, exc):
+        return JSONResponse({"error": str(exc)}, status_code=422)
 
     def ses():
         return holder["session"]
@@ -123,6 +131,74 @@ def create_app(save_dir="runs/observatory"):
     @app.get("/api/saves")
     def saves():
         return {"saves": sorted(p.stem for p in save_root.glob("*.npz"))} if save_root.exists() else {"saves": []}
+
+    # ---- multiverse ----
+    @app.get("/api/multiverse")
+    def multiverse_list():
+        return {"universes": multiverse.to_public()}
+
+    @app.post("/api/multiverse")
+    def multiverse_create(body: dict = Body(default={})):
+        name = body.get("name", "")
+        seed = body.get("seed")
+        cosmology = body.get("cosmology")
+        model_settings = body.get("model_settings")
+        rec = multiverse.create_universe(name=name, seed=seed, cosmology=cosmology, model_settings=model_settings)
+        return {"universe": rec.to_dict(), "provenance": rec.provenance}
+
+    @app.get("/api/multiverse/{uid}")
+    def multiverse_get(uid: str):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        rec = multiverse.get(uid)
+        return {"universe": rec.to_dict(), "provenance": rec.provenance, "checkpoints": multiverse.list_checkpoints(uid)}
+
+    @app.patch("/api/multiverse/{uid}/name")
+    def multiverse_rename(uid: str, body: dict = Body(...)):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        rec = multiverse.rename(uid, body.get("name", ""))
+        return {"universe": rec.to_dict()}
+
+    @app.delete("/api/multiverse/{uid}")
+    def multiverse_delete(uid: str):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        multiverse.delete(uid)
+        return {"ok": True}
+
+    @app.post("/api/multiverse/{uid}/time")
+    def multiverse_set_time(uid: str, body: dict = Body(...)):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        rec = multiverse.set_time(uid, float(body.get("cosmic_time_s", 0)), float(body.get("scale_factor", 1e-13)))
+        return {"universe": rec.to_dict()}
+
+    @app.post("/api/multiverse/{uid}/checkpoint")
+    def multiverse_checkpoint(uid: str, body: dict = Body(default={})):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        cp = multiverse.checkpoint(uid, body.get("id"), body.get("arrays"))
+        return {"checkpoint": asdict(cp)}
+
+    @app.get("/api/multiverse/{uid}/checkpoints")
+    def multiverse_checkpoints(uid: str):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        return {"checkpoints": [asdict(c) for c in multiverse.list_checkpoints(uid)]}
+
+    @app.post("/api/multiverse/{uid}/checkpoints/{cid}/restore")
+    def multiverse_restore(uid: str, cid: str):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        return multiverse.restore_checkpoint(uid, cid)
+
+    @app.post("/api/multiverse/{uid}/branch")
+    def multiverse_branch(uid: str, body: dict = Body(default={})):
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        rec = multiverse.branch(uid, body.get("name", f"branch of {uid}"), body.get("from_checkpoint"), body.get("seed"))
+        return {"universe": rec.to_dict(), "provenance": rec.provenance}
 
     @app.post("/api/load")
     def load(body: dict = Body(...)):
