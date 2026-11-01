@@ -11,6 +11,10 @@ dependencies = ["numpy>=1.24,<3", "PyYAML>=6,<7", "scipy>=1.10"]
 dev = ["pytest>=7,<10", "fastapi>=0.110", "httpx>=0.27", "websockets>=12"]
 plots = ["matplotlib>=3.7"]
 observatory = ["fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.27", "websockets>=12"]
+# Research-only dependency: PyTorch (CPU wheel). Not part of the lightweight
+# runtime or Windows installer; install separately with
+#   pip install -e ".[research]" --index-url https://download.pytorch.org/whl/cpu
+research = ["torch>=2.1,<3"]
 [project.scripts]
 universe-observatory = "universe_engine.observatory.server:main"
 universe = "universe_engine.cli:main"
