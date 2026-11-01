@@ -1,0 +1,17 @@
+{
+  "n_independent_pairs": 3,
+  "paired_difference_mean": -0.06,
+  "paired_difference_sd": 0.0721110255092798,
+  "paired_cohens_dz": -0.8320502943378436,
+  "bootstrap_percentile_95_CI": [
+    -0.12,
+    0.020000000000000018
+  ],
+  "individual_differences": {
+    "1001": -0.12,
+    "1002": 0.020000000000000018,
+    "1003": -0.08000000000000002
+  },
+  "method": "seed-level paired bootstrap percentile interval; descriptive/exploratory unless analysis preregistered; no multiplicity correction automatically",
+  "warning": "For complex nested evaluation, cluster by independent training replicate. Confirm legitimate pairing and use pre-specified Holm correction for secondary hypotheses."
+}
