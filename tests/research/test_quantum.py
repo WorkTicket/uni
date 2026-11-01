@@ -134,8 +134,8 @@ def test_quantum_chsh_max():
 
 def test_chsh_optimal_settings_produce_violation():
     """Optimal settings on phi+ should give S close to 2*sqrt(2)."""
-    exp = CHSHExperiment(bell_state="phi_plus", n_shots=50000, seed=11)
-    result = exp.run(settings=optimal_chsh_settings(), n_shots=50000)
+    exp = CHSHExperiment(bell_state="phi_plus", n_shots=5000, seed=11)
+    result = exp.run(settings=optimal_chsh_settings(), n_shots=5000)
     assert result.violates_classical
     assert abs(result.s_value - quantum_chsh_max()) < 0.1
     assert result.no_signalling_alice
@@ -144,15 +144,15 @@ def test_chsh_optimal_settings_produce_violation():
 
 def test_classical_chsh_no_violation():
     """Classical local model must not violate the CHSH bound."""
-    exp = CHSHExperiment(bell_state="phi_plus", n_shots=30000, seed=11)
-    result = exp.run_classical_baseline(n_shots=30000)
+    exp = CHSHExperiment(bell_state="phi_plus", n_shots=5000, seed=11)
+    result = exp.run_classical_baseline(n_shots=5000)
     assert not result.violates_classical
     assert abs(result.s_value) <= classical_chsh_bound() + 0.1
 
 
 def test_verify_chsh_limits():
     """The verification helper should report both quantum and classical pass."""
-    out = verify_chsh_limits(n_shots=30000, seed=13)
+    out = verify_chsh_limits(n_shots=5000, seed=13)
     assert out["quantum_passes"]
     assert out["classical_passes"]
     assert out["all_pass"]

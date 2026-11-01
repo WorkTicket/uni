@@ -202,7 +202,10 @@
     function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; $("btn-skip").disabled = true; } }
     function fail(e) { const el = $("intro-err"); el.hidden = false; el.textContent = String(e && e.message || e); console.error(e); }
     ui.progress = progress; ui.fail = fail;
-    $("btn-begin").addEventListener("click", () => { app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.pause(); });
+    $("btn-begin").addEventListener("click", async () => {
+      if (!app.uni) { await app.generate(parseInt($("seed").value, 10) || 0, progress); renderObjectExplorer(); drawInfo(); }
+      app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.pause();
+    });
     $("btn-skip").addEventListener("click", () => { app.homeView(); app.setS(U.Cosmo.NOW_S); showIntro(false); app.pause(); });
 
     // ---- input ----
