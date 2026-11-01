@@ -99,7 +99,9 @@
         case "l": case "L": $("opt-labels").click(); break; case "o": case "O": $("opt-orbits").click(); break;
         case "f": case "F": if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); else document.exitFullscreen(); break;
         case "p": case "P": app.surface(app.node); break;
-        case "c": case "C": { const m = ["orbit","follow","surface","free"], i = m.indexOf(app.modeOf()); app.modeOf(); const next = m[(i + 1) % m.length]; if (next === "follow" || next === "surface") app[next === "follow" ? "follow" : "surface"](app.node); else app[next === "free" ? "freeMode" : "orbitMode"](); } break;
+        case "c": case "C": { const m = ["orbit","follow","surface","free"], i = m.indexOf(app.modeOf()); const next = m[(i + 1) % m.length]; if (next === "follow" || next === "surface") app[next === "follow" ? "follow" : "surface"](app.node); else app[next === "free" ? "freeMode" : "orbitMode"](); } break;
+        case "g": case "G": app.galaxyMap(); break;
+        case "m": case "M": app.solarSystemMap(); break;
         case "Escape": app.autopilot = null; menu.hidden = true; break;
         case "]": bumpSpeed(1); break; case "[": bumpSpeed(-1); break;
         case ",": app.stepBackward(); break; case ".": app.stepForward(); break;

@@ -124,6 +124,19 @@
     freeMode() { this.camMode = "free"; this.followTarget = null; }
     modeOf() { return this.camMode; }
 
+    // ---- camera transitions (spec: resolve position -> bounding radius -> framing distance -> interpolate) ----
+    // framing distance from FOV so the object's bounding sphere just fits the view
+    frameDist(radiusM) { const f = 1 / Math.tan(FOV / 2); return radiusM / Math.tan(FOV / 2) * 1.15; }
+
+    // galaxy map: strategic overview framing the whole simulated region / halo population
+    galaxyMap() { this.camMode = "orbit"; this.followTarget = null; const n = this.uni.root; this.flyTo(n); }
+    // solar system map: frame the current star's planetary system
+    solarSystemMap() {
+      const st = this.node.kind === "star" ? this.node : (this.node.parent && this.node.parent.kind === "star" ? this.node.parent : null);
+      if (!st) return;
+      this.camMode = "orbit"; this.followTarget = null; this.flyTo(st);
+    }
+
     // resolve the follow/surface target's current world position (metres, universe frame)
     followPosition() {
       const ft = this.followTarget; if (!ft) return null;
