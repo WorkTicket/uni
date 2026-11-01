@@ -326,6 +326,13 @@ class Habitat:
             "replicator_per_cell": self.replicator_per_cell,
             "cell_monomers": self.cell_monomers,
             "mass_ledger_error": self._ledger_error,
+            "mass_ledger_baseline": {
+                "element_totals": (self._init_element_totals.tolist()
+                                   if self._init_element_totals is not None else None),
+                "charge": self._init_charge,
+            },
+            "rng": {"bit_generator": self.rng.bit_generator.__class__.__name__,
+                    "state": self.rng.bit_generator.state},
         }
 
     @classmethod
@@ -336,6 +343,12 @@ class Habitat:
         hab.n_patches = n_patches
         hab.seed = seed
         hab.rng = np.random.default_rng(seed)
+        if data.get("rng"):
+            bg = getattr(np.random, data["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = data["rng"]["state"]
+                hab.rng = np.random.Generator(bit_gen)
         hab.t_gyr = float(data["t_gyr"])
         hab.species_names = list(data["species"])
         hab.n_spec = len(hab.species_names)
@@ -374,5 +387,10 @@ class Habitat:
         hab.replicator_per_cell = {int(k): dict(v) for k, v in data.get("replicator_per_cell", {}).items()}
         hab.cell_monomers = {int(k): int(v) for k, v in data.get("cell_monomers", {}).items()}
         hab._ledger_error = float(data.get("mass_ledger_error", 0.0))
-        hab._reset_ledger()
+        baseline = data.get("mass_ledger_baseline")
+        if baseline and baseline.get("element_totals") is not None:
+            hab._init_element_totals = np.array(baseline["element_totals"], dtype=float)
+            hab._init_charge = float(baseline.get("charge", 0.0))
+        else:
+            hab._reset_ledger()
         return hab

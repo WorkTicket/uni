@@ -292,6 +292,8 @@ class WorkspaceAgentController:
             "actions_taken": self.actions_taken,
             "workspace": self.workspace.checkpoint(),
             "self_model": self.self_model.checkpoint(),
+            "rng": {"bit_generator": self.rng.bit_generator.__class__.__name__,
+                    "state": self.rng.bit_generator.state},
         }
 
     def restore(self, data: dict) -> None:
@@ -304,3 +306,9 @@ class WorkspaceAgentController:
         self.workspace = GlobalWorkspace.restore(data.get("workspace", {}))
         from ..self_model.model import SelfModel
         self.self_model = SelfModel.restore(data.get("self_model", {}))
+        if data.get("rng"):
+            bg = getattr(np.random, data["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = data["rng"]["state"]
+                self.rng = np.random.Generator(bit_gen)

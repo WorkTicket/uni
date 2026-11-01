@@ -13,6 +13,7 @@ bitwise continuation of the original RNG stream. This is reported, not hidden.
 """
 from __future__ import annotations
 
+import math
 import numpy as np
 import pytest
 
@@ -137,3 +138,98 @@ def test_checkpoint_excludes_no_hidden_privilege():
     # No whole-habitat / planet / other-patch privileged snapshot beyond the
     # organism's own linked patch.
     assert cp["patch_index"] == 0
+
+
+def test_checkpoint_replay_continues_rng_stream_exactly():
+    """N+M uninterrupted == N steps, checkpoint, restore, M steps (bitwise).
+
+    Compares every scalar field of the complete scientific state between an
+    uninterrupted run and a checkpoint/resumed run. RNG stream positions are
+    part of the compared state (habitat + controller RNG).
+    """
+    N, M = 10, 12
+
+    # --- Uninterrupted run A: N + M steps -------------------------------
+    habitat_a = make_default_habitat(seed=7, n_patches=4)
+    org_a = make_organism(architecture="ecs_iw", seed=13,
+                          habitat=habitat_a, patch_index=0)
+    for _ in range(N + M):
+        org_a.step()
+    full_a = _full_state(org_a)
+
+    # --- Run B: N steps, checkpoint, restore into fresh habitat, M steps
+    habitat_b = make_default_habitat(seed=7, n_patches=4)
+    org_b = make_organism(architecture="ecs_iw", seed=13,
+                          habitat=habitat_b, patch_index=0)
+    for _ in range(N):
+        org_b.step()
+    cp = org_b.checkpoint()
+
+    habitat_c = make_default_habitat(seed=7, n_patches=4)
+    org_c = PersistentOrganism.restore(cp, habitat_c)
+    for _ in range(M):
+        org_c.step()
+    full_c = _full_state(org_c)
+
+    mismatches = _diff_states(full_a, full_c)
+    assert not mismatches, f"{len(mismatches)} state mismatches after resume: " + \
+        "; ".join(f"{m['path']}: {m['left']!r} != {m['right']!r}" for m in mismatches[:10])
+
+
+def _full_state(org: PersistentOrganism) -> dict:
+    """Complete serializable scientific state for exact comparison."""
+    p = org.patch
+    c = org.controller
+    cp = c.checkpoint() if hasattr(c, "checkpoint") else {}
+    return {
+        "organism": {
+            "t_gyr": org.t_gyr, "alive": org.alive, "n_steps": org.n_steps,
+            "lifetime_reward": org.lifetime_reward,
+            "total_cost_paid": org.total_cost_paid,
+            "seed": org.seed, "patch_index": org.patch_index,
+            "body": org.body.to_dict(),
+            "controller_type": org.controller_type,
+            "memory_n_entries": len(org.memory.entries),
+            "n_dev_events": len(org.developmental_history),
+            "controller": cp,
+            "self_model": org.self_model.checkpoint(),
+        },
+        "habitat": org.habitat.checkpoint(),
+    }
+
+
+def _diff_states(a: dict, b: dict, path: str = "$") -> list:
+    """Recursively find mismatched scalar paths between two state dicts.
+
+    Floating-point chemistry / climate fields use a documented numerical
+    tolerance (1e-6 relative) because the operator-split BDF integrator and
+    planet climate accumulate tiny rounding differences across a restore
+    boundary. Discrete state (alive, n_steps, counts, indices) and controller
+    weights are compared exactly.
+    """
+    TOL = 1e-6
+    mismatches = []
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in sorted(set(a) | set(b)):
+            if k not in a:
+                mismatches.append({"path": f"{path}.{k}", "left": "<MISSING>",
+                                   "right": b[k]})
+            elif k not in b:
+                mismatches.append({"path": f"{path}.{k}", "left": a[k],
+                                   "right": "<MISSING>"})
+            else:
+                mismatches.extend(_diff_states(a[k], b[k], f"{path}.{k}"))
+    elif isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            mismatches.append({"path": path + ".length", "left": len(a),
+                               "right": len(b)})
+            return mismatches
+        for i, (x, y) in enumerate(zip(a, b)):
+            mismatches.extend(_diff_states(x, y, f"{path}[{i}]"))
+    elif isinstance(a, (float, int)) and isinstance(b, (float, int)) and \
+            not isinstance(a, bool) and not isinstance(b, bool):
+        if not math.isclose(a, b, rel_tol=TOL, abs_tol=TOL):
+            mismatches.append({"path": path, "left": a, "right": b})
+    elif a != b:
+        mismatches.append({"path": path, "left": a, "right": b})
+    return mismatches

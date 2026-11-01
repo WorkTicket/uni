@@ -329,10 +329,18 @@ class ReactiveController:
         pass
 
     def checkpoint(self) -> Dict[str, Any]:
-        return {"controller_type": "reactive", "actions_taken": self.actions_taken}
+        return {"controller_type": "reactive", "actions_taken": self.actions_taken,
+                "rng": {"bit_generator": self.rng.bit_generator.__class__.__name__,
+                        "state": self.rng.bit_generator.state}}
 
     def restore(self, data: Dict[str, Any]) -> None:
         self.actions_taken = int(data.get("actions_taken", 0))
+        if data.get("rng"):
+            bg = getattr(np.random, data["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = data["rng"]["state"]
+                self.rng = np.random.Generator(bit_gen)
 
 
 class RecurrentWorldModelController:
@@ -466,6 +474,8 @@ class RecurrentWorldModelController:
             "W_r": self.W_r.tolist(),
             "actions_taken": self.actions_taken,
             "prediction_error_history": self.prediction_error_history[-100:],
+            "rng": {"bit_generator": self.rng.bit_generator.__class__.__name__,
+                    "state": self.rng.bit_generator.state},
         }
 
     def restore(self, data: Dict[str, Any]) -> None:
@@ -477,3 +487,9 @@ class RecurrentWorldModelController:
         self.W_r = np.array(data.get("W_r", self.W_r))
         self.actions_taken = int(data.get("actions_taken", 0))
         self.prediction_error_history = list(data.get("prediction_error_history", []))
+        if data.get("rng"):
+            bg = getattr(np.random, data["rng"]["bit_generator"], None)
+            if bg is not None:
+                bit_gen = bg()
+                bit_gen.state = data["rng"]["state"]
+                self.rng = np.random.Generator(bit_gen)
