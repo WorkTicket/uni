@@ -4,7 +4,7 @@
   "current_phase": "Sprint 11: world-model failure investigation (diagnostic complete)",
   "phase_status": "sprints_1_10_committed; sprint_11_diagnostic_complete",
   "branch": "feature/project-genesis-research",
-  "head_commit": "e0510d9",
+  "head_commit": "17839a1",
   "research_sprints": {
     "sprint_1_research_infrastructure": "complete",
     "sprint_2_quantum_validation": "complete",
@@ -98,7 +98,7 @@
     "gridworld_reproduction": "python -c \"from universe_engine.research.world_model import run_comparison_experiment; run_comparison_experiment(seed=1)\""
   },
   "updated_utc": "2026-11-01T18:30:00+00:00",
-  "repo_revision_at_generation": "feature/project-genesis-research (e0510d9)",
+  "repo_revision_at_generation": "feature/project-genesis-research (17839a1)",
   "next_action": "Commit Sprint 11 diagnostic findings; decide whether to run Phase 6-7 ablations/statistics or retain the honest null result",
   "next_phase": "Post-Sprint 11: refine ECS-IW claims to be task-conditioned; optional larger-seed analysis"
 }

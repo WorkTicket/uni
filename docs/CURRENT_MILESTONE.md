@@ -2,7 +2,7 @@
 
 Authoritative, machine-generated numbers: `docs/IMPLEMENTATION_STATUS.json`.
 
-Branch: `feature/project-genesis-research` (HEAD commit `e0510d9`, Sprint 10 committed).
+Branch: `feature/project-genesis-research` (HEAD commit `17839a1`, Sprint 11 complete).
 
 **Project Genesis research program — Sprints 1-10 committed.**
 
