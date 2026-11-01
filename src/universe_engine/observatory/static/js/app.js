@@ -260,6 +260,43 @@
     microMode(on) { if (on) this.camera.microscope(this.node); else this.camera.orbitTarget(this.node); this.camMode = this.camera.modeOf(); this.micro = !!on; }
     setSimEnvs(envs) { this.simEnvs = envs || null; this.emit("sim-envs", envs); }
 
+    // ---- planetary habitat / environment inspection (PASS 3) ----
+    async habitatCreateFor(node) {
+      if (!node || (node.kind !== "planet" && node.kind !== "moon")) return null;
+      if (node.__habId) { return this.habitatFetch(node.__habId); }
+      const d = node.data;
+      const spec = { mass_mearth: 1.0, a_au: (d.a && d.a / AU) || 1.0, ocean_fraction: 0.71,
+                     has_surface_water: true, tectonics: "mobile", seed: U.hash2(this.seed, String(node.name || node)) };
+      const body = { id: "hab-" + String(node.name || node), seed: spec.seed,
+                     n_patches: 8, t_gyr: 4.5, has_water: true, a_au: spec.a_au };
+      try {
+        const r = await fetch("/api/habitat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!r.ok) return null;
+        const j = await r.json();
+        node.__habId = j.id;
+        this.habitatCache = this.habitatCache || {};
+        this.habitatCache[j.id] = j.state;
+        this.emit("habitat-created", j);
+        return j.state;
+      } catch (e) { return null; }
+    }
+    async habitatFetch(hid) {
+      try {
+        const r = await fetch("/api/habitat/" + encodeURIComponent(hid));
+        if (!r.ok) return null;
+        const j = await r.json();
+        this.habitatCache = this.habitatCache || {};
+        this.habitatCache[hid] = j;
+        return j;
+      } catch (e) { return null; }
+    }
+    async maybeRefreshHabitat(node) {
+      if (!node || (node.kind !== "planet" && node.kind !== "moon")) return;
+      let hid = node.__habId;
+      if (!hid) { const st = await this.habitatCreateFor(node); if (!st) return; hid = node.__habId; }
+      else { await this.habitatFetch(hid); }
+    }
+
     // ---- Scientific Simulation mode ------------------------------------------------
     // Renders the actual PM3D particle state from the backend API (SIMULATED),
     // distinct from the procedural Illustrative mode.
@@ -686,6 +723,62 @@
       } else if (n.kind === "moon") { out.push({ node: n.parent, rel: V.sub(V.scale(n.local, -1), p), size: n.parent.size, minPx: 0 }); }
       else if (n.kind === "halo") { for (const gl of this.uni.members_of(n)) if (gl.data.tForm <= this.t) out.push({ node: gl, rel: V.sub(gl.local, p), size: gl.size, minPx: 6 }); }
       return out;
+    }
+    // ---- searchable object catalog (PASS 2: object explorer) ----
+    buildObjectCatalog() {
+      this._catSeq = 0;
+      const out = [];
+      const add = (node, kind, name, label) => out.push({ id: kind + "-" + (++this._catSeq), kind, name, label, node, chain: node.chain() });
+      if (!this.uni) return out;
+      add(this.uni.root, "universe", "Universe", "The simulated universe");
+      for (let h = 0; h < this.uni.K; h++) {
+        const halo = this.uni.haloNode(h);
+        if (!halo || halo.data.tForm > this.t) continue;
+        add(halo, "halo", halo.name, halo.data.groupName + " · halo");
+        const gals = this.uni.members_of(halo);
+        for (const gal of gals) {
+          if (gal.data.tForm > this.t) continue;
+          add(gal, "galaxy", gal.name, U.GALAXY_KINDS[gal.data.kind] + " galaxy");
+          try { this.stars.build(gal, Math.min(QUALITY[this.quality].stars, 4000)); } catch (e) { continue; }
+          const s = this.stars.stars, n = this.stars.n;
+          for (let i = 0; i < n; i++) {
+            const age = this.t / U.GYR - s.attr[i * 4 + 2];
+            if (age < 0 || age > s.attr[i * 4 + 3]) continue;
+            const spec = { pos: [s.pos[i * 3], s.pos[i * 3 + 1], s.pos[i * 3 + 2]], M: s.mass[i], tb: s.attr[i * 4 + 2], id: U.hash2(gal.data.seed, i + 1) };
+            const star = U.makeStarNode(gal, spec); star.cloudIdx = i; U.makeSystem(star, this.simEnvs);
+            const pname = U.name(spec.id);
+            add(star, "star", pname, "Class " + U.StarPhys.spectralClass(spec.T) + " · " + spec.M.toFixed(2) + " M☉");
+            let pi = 0;
+            for (const p of (star.children || [])) {
+              if (p.data.moon) continue;
+              pi++;
+              const pname2 = pname + "-" + pi;
+              const au = p.data && p.data.a ? (p.data.a / AU).toFixed(2) + " AU" : "";
+              add(p, "planet", pname2, p.data.cls + " · " + au);
+              let mi = 0;
+              for (const m of (p.children || [])) {
+                if (!m.data.moon) continue;
+                mi++;
+                add(m, "moon", pname2 + "m" + mi, "Moon");
+              }
+            }
+          }
+        }
+      }
+      return out;
+    }
+    findObject(query) {
+      const cat = this.buildObjectCatalog();
+      const q = (query || "").toLowerCase().trim();
+      if (!q) return cat.slice(0, 50);
+      return cat.filter((o) => o.name.toLowerCase().includes(q) || o.label.toLowerCase().includes(q) || o.kind.includes(q));
+    }
+    focusObjectByNode(node) {
+      if (!node) return false;
+      this.camera.setTarget(node);
+      this.camMode = this.camera.modeOf();
+      this.camera.focus(node);
+      return true;
     }
     describe(n) {
       const d = n.data, rows = [];

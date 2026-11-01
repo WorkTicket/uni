@@ -196,6 +196,7 @@
       showIntro(true);
       try { await app.generate(parseInt($("seed").value, 10) || 0, progress); } catch (e) { fail(e); return; }
       $("prog-label").textContent = "Ready"; app.setS(0); $("btn-begin").disabled = false; $("btn-skip").disabled = false;
+      renderObjectExplorer(); drawInfo();
     });
     function progress(f, label) { $("prog-bar").style.width = (f * 100).toFixed(0) + "%"; if (label) $("prog-label").textContent = label + "…"; }
     function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; $("btn-skip").disabled = true; } }
@@ -372,10 +373,75 @@
     function drawInfo() {
       const n = app.node, d = n.data;
       const KIND = { universe: "Cosmic web", halo: d.groupName || "Halo", galaxy: "Galaxy", star: "Star system", planet: "Planet", moon: "Moon" };
-      $("info-kind").textContent = KIND[n.kind] || n.kind; $("info-name").textContent = n.kind === "universe" ? "The universe" : n.name;
-      const dl = $("info-rows"); dl.innerHTML = "";
-      app.describe(n).forEach(([k, v]) => { const a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = k; b.textContent = v; dl.appendChild(a); dl.appendChild(b); });
-      $("info-text").textContent = n.kind === "universe" ? "Scroll toward any glowing knot to fly into a cluster of galaxies." : n.kind === "galaxy" ? "Every point of light is a star. Scroll toward one to visit it." : n.kind === "star" ? "Click a planet or its label to fly there." : "";
+      const inspKind = $("insp-kind"), inspName = $("insp-name"), inspRows = $("insp-rows"), inspText = $("insp-text");
+      if (inspKind) inspKind.textContent = KIND[n.kind] || n.kind;
+      if (inspName) inspName.textContent = n.kind === "universe" ? "The universe" : n.name;
+      if (inspRows) { inspRows.innerHTML = ""; app.describe(n).forEach(([k, v]) => { const a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = k; b.textContent = v; inspRows.appendChild(a); inspRows.appendChild(b); }); }
+      if (inspText) inspText.textContent = n.kind === "universe" ? "Scroll toward any glowing knot to fly into a cluster of galaxies." : n.kind === "galaxy" ? "Every point of light is a star. Scroll toward one to visit it." : n.kind === "star" ? "Click a planet or its label to fly there." : "";
+      // show habitat panel for planets with a habitat
+      const habPanel = $("habitat-panel");
+      if (habPanel) habPanel.style.display = (n.kind === "planet" || n.kind === "moon") ? "block" : "none";
+      if (n.kind === "planet" || n.kind === "moon") { app.maybeRefreshHabitat(n); renderHabitat(n); }
+    }
+    async function renderHabitat(node) {
+      const rowsEl = $("hab-rows"); const textEl = $("hab-text"); const actsEl = $("hab-actions");
+      if (!rowsEl) return;
+      const hid = node && node.__habId;
+      if (!hid) { rowsEl.innerHTML = ""; actsEl.innerHTML = ""; if (textEl) textEl.textContent = "Create a habitat to inspect this planet's environment."; return; }
+      const st = app.habitatCache && app.habitatCache[hid];
+      if (!st) { rowsEl.innerHTML = ""; actsEl.innerHTML = ""; if (textEl) textEl.textContent = "Loading habitat environment&hellip;"; return; }
+      rowsEl.innerHTML = "";
+      const rows = [
+        ["Time (Gyr)", st.t_gyr !== undefined ? st.t_gyr.toFixed(3) : "–"],
+        ["Sterile", String(!!st.sterile)],
+        ["Replicators", st.replicators ? JSON.stringify(st.replicators) : "–"],
+        ["Monomer pool", st.pool_monomer !== undefined ? String(st.pool_monomer) : "–"],
+        ["Mass ledger error", st.mass_ledger_error !== undefined ? st.mass_ledger_error.toExponential(2) : "–"],
+      ];
+      for (const [k, v] of rows) { const a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = k; b.textContent = v; rowsEl.appendChild(a); rowsEl.appendChild(b); }
+      if (st.patches && st.patches.length) {
+        const p = st.patches[0];
+        const a = document.createElement("dt"); a.textContent = "Patch 0 temperature (K)"; const b = document.createElement("dd"); b.textContent = (p.temperature_K !== undefined ? p.temperature_K.toFixed(1) : "–"); rowsEl.appendChild(a); rowsEl.appendChild(b);
+        const a2 = document.createElement("dt"); a2.textContent = "Patch 0 pH"; const b2 = document.createElement("dd"); b2.textContent = (p.pH !== undefined ? p.pH.toFixed(2) : "–"); rowsEl.appendChild(a2); rowsEl.appendChild(b2);
+        const a3 = document.createElement("dt"); a3.textContent = "Liquid water"; const b3 = document.createElement("dd"); b3.textContent = String(!!p.liquid_water); rowsEl.appendChild(a3); rowsEl.appendChild(b3);
+      }
+      actsEl.innerHTML = "";
+      const btnSeed = document.createElement("button"); btnSeed.textContent = "Seed replicator"; btnSeed.className = "pill secondary"; btnSeed.style.width = "auto";
+      btnSeed.onclick = async () => { try { await fetch("/api/habitat/" + encodeURIComponent(hid), { method: "POST" }); await app.maybeRefreshHabitat(node); renderHabitat(node); } catch (e) {} };
+      actsEl.appendChild(btnSeed);
+      if (textEl) textEl.textContent = st.sterile ? "Habitat is sterile — seed replicators to begin life." : "Habitat active — chemistry and replicators are coupled to the planet environment.";
+    }
+    // ---- object explorer (PASS 2: searchable Universe Explorer) ----
+    let catalog = [], catalogT = 0;
+    function renderObjectExplorer() {
+      const list = $("explore-list"); if (!list) return;
+      const q = $("obj-search").value;
+      const cat = app.buildObjectCatalog();
+      catalog = cat; catalogT = app.time;
+      list.innerHTML = "";
+      const shown = cat.filter((o) => !q || o.name.toLowerCase().includes(q.toLowerCase()) || o.label.toLowerCase().includes(q.toLowerCase()));
+      if (shown.length === 0) { list.innerHTML = "<div class='empty'>No objects match.</div>"; return; }
+      const cur = app.node ? app.node : null;
+      for (const o of shown.slice(0, 200)) {
+        const el = document.createElement("div");
+        el.className = "obj " + (o.kind) + (cur === o.node ? " selected" : "");
+        el.innerHTML = `<div class="dot kind-${o.kind}"></div><div><div class="obj-name">${escapeHtml(o.name)}</div><div class="obj-sub">${escapeHtml(o.label)}</div></div><div class="obj-actions"><button data-kind="${o.kind}" data-focus>Focus</button></div>`;
+        el.querySelector("[data-focus]").addEventListener("click", (ev) => { ev.stopPropagation(); app.focusObjectByNode(o.node); });
+        el.addEventListener("click", () => { app.focusObjectByNode(o.node); renderObjectExplorer(); drawInfo(); });
+        list.appendChild(el);
+      }
+    }
+    function escapeHtml(t) { return String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c]); }
+    // ---- navigation wiring ----
+    function wireNav() {
+      $("btn-focus").addEventListener("click", () => { const n = app.node; if (n) app.focusObjectByNode(n); });
+      $("btn-follow").addEventListener("click", () => { app.follow(app.node); app.camMode = app.camera.modeOf(); });
+      $("btn-surface").addEventListener("click", () => { app.surface(app.node); app.camMode = app.camera.modeOf(); });
+      $("btn-orbit").addEventListener("click", () => { app.orbitMode(); app.camMode = app.camera.modeOf(); });
+      $("btn-free").addEventListener("click", () => { app.freeMode(); app.camMode = app.camera.modeOf(); });
+      $("btn-home").addEventListener("click", () => { app.homeView(); app.camMode = app.camera.modeOf(); renderObjectExplorer(); drawInfo(); });
+      $("btn-back").addEventListener("click", () => { if (app.camera.back()) { app.camMode = app.camera.modeOf(); renderObjectExplorer(); drawInfo(); } });
+      $("obj-search").addEventListener("input", () => { renderObjectExplorer(); });
     }
     function labelEl(i) {
       let el = labelPool[i];
@@ -402,6 +468,8 @@
     }
     // Initialize the playback UI (presets, rate, horizon notice).
     updatePlaybackUI();
+    wireNav();
+    renderObjectExplorer();
     return ui;
   };
 })(typeof window !== "undefined" ? window : globalThis);

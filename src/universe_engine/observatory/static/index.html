@@ -6,55 +6,113 @@
 <meta name="color-scheme" content="dark">
 <title>Universe Observatory</title>
 <link rel="stylesheet" href="css/app.css">
+<style>
+  #shell { display: grid; grid-template-columns: 300px 1fr 340px; grid-template-rows: auto 1fr auto; gap: 0; height: 100vh; overflow: hidden; }
+  @media (max-width: 1100px) { #shell { grid-template-columns: 260px 1fr 300px; } }
+  @media (max-width: 820px) { #shell { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr auto; } #sidebar-right { grid-column: 1 / -1; } }
+  #top { grid-column: 1 / -1; z-index: 10; }
+  #canvas-wrap { grid-row: 2 / 3; grid-column: 1 / -1; position: relative; min-height: 0; }
+  canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: #000 }
+  canvas#gl.dragging { cursor: grabbing }
+  canvas#gl.pointing { cursor: pointer }
+  #sidebar-left { grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-right: 1px solid var(--line); background: var(--glass2); }
+  #sidebar-right { grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-left: 1px solid var(--line); background: var(--glass2); }
+  .panel { margin-bottom: 12px; }
+  .panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .card { background: rgba(20,24,38,.45); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; margin-bottom: 8px; }
+  label { display: block; margin: 5px 0 2px; color: var(--muted-foreground); font-size: 11.5px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--ink); }
+  button { width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: var(--ink); cursor: pointer; font: inherit; margin-top: 4px; }
+  button:hover { background: rgba(255,255,255,.13); }
+  button.accent { background: linear-gradient(135deg,rgba(143,176,255,.32),rgba(185,155,255,.32)); border-color: rgba(160,180,255,.55); }
+  button.secondary { background: var(--glass); border-color: var(--line); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; margin-top: 6px; }
+  .row > * { flex: 1; width: auto; }
+  .obj { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; margin: 2px 0; font-size: 12.5px; border: 1px solid transparent; }
+  .obj:hover { background: rgba(255,255,255,.06); border-color: var(--line); }
+  .obj.selected { background: rgba(143,176,255,.2); border-color: var(--acc); }
+  .obj .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mut); flex: 0 0 8px; }
+  .obj.kind-planet .dot { background: #58a6ff; }
+  .obj.kind-star .dot { background: #ffd9a0; }
+  .obj.kind-galaxy .dot { background: #b99bff; }
+  .obj.kind-universe .dot { background: #fff; }
+  .obj.kind-halo .dot { background: #9aa4bd; }
+  .obj-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .obj-sub { font-size: 10.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .obj-actions { display: flex; gap: 4px; }
+  .obj-actions button { width: auto; padding: 2px 6px; font-size: 10.5px; margin: 0; }
+  .search { width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--ink); margin-bottom: 8px; }
+  .empty { color: var(--muted-foreground); font-size: 11.5px; font-style: italic; padding: 6px 0; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 4px 0 0; font-size: 12.5px; }
+  dt { color: var(--muted-foreground); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 9.5px; margin-right: 4px; border: 1px solid var(--line); color: var(--mut); }
+  .badge.simulated { border-color: var(--success); color: var(--success); }
+  .badge.speculative { border-color: var(--destructive); color: var(--destructive); }
+  .link { color: var(--acc); cursor: pointer; text-decoration: underline; font-size: 11.5px; }
+  .link:hover { color: #8fb0ff; }
+  .fine { color: var(--mut); font-size: 11px; line-height: 1.45; margin-top: 6px; }
+  .notice { color: var(--warm); font-size: 11px; margin-top: 6px; text-align: center; background: rgba(255,191,128,.1); border: 1px solid rgba(255,191,128,.4); border-radius: 10px; padding: 5px 8px; }
+  #explore-list { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: rgba(0,0,0,.25); }
+</style>
 </head>
 <body>
-<canvas id="gl" aria-label="Universe view"></canvas>
+<div id="shell">
+  <header id="top" class="glass">
+    <div class="brand"><span class="logo" aria-hidden="true"></span><span>Universe Observatory</span></div>
+    <nav id="crumbs" aria-label="Where you are"></nav>
+    <div class="spacer"></div>
+    <div id="top-right" style="display:flex;align-items:center;gap:8px">
+      <span id="top-universe" class="fine">Reference universe &middot; <span id="top-model">&Lambda;CDM</span></span>
+      <button id="btn-save" class="pill secondary" title="Save state">Save</button>
+      <button id="btn-settings" class="pill icon" title="Settings" aria-label="Settings">&#9776;</button>
+      <a href="/research-lab" class="pill secondary" style="text-decoration:none">Life Laboratory</a>
+      <a href="/hyperspace" class="pill secondary" style="text-decoration:none">Brane Laboratory</a>
+    </div>
+  </header>
 
-<div id="labels" aria-hidden="true"></div>
-<div id="tip" class="tip" hidden><b id="tip-name"></b><span id="tip-sub"></span></div>
+  <div id="canvas-wrap">
+    <canvas id="gl" aria-label="Universe view"></canvas>
+    <div id="labels" aria-hidden="true"></div>
+    <div id="tip" class="tip" hidden><b id="tip-name"></b><span id="tip-sub"></span></div>
+  </div>
 
-<header id="top" class="glass">
-  <div class="brand"><span class="logo" aria-hidden="true"></span><span>Universe Observatory</span></div>
-  <nav id="crumbs" aria-label="Where you are"></nav>
-  <div class="spacer"></div>
-  <button id="btn-dive" class="pill accent" title="Fly from the cosmic web to a planet (D)">&#10022; Dive</button>
-  <button id="btn-home" class="pill" title="Back to the whole universe (H)">Overview</button>
-  <button id="btn-menu" class="pill icon" title="Settings" aria-label="Settings">&#9776;</button>
-</header>
+  <aside id="sidebar-left">
+    <div class="panel">
+      <h3>Universe Explorer</h3>
+      <input id="obj-search" type="search" class="search" placeholder="Search galaxy, star, planet&hellip;">
+      <div id="explore-list"></div>
+      <div class="fine" id="explore-hint">Select an object to focus it. Use Focus / Follow / Surface to navigate.</div>
+    </div>
+    <div class="panel">
+      <h3>Navigation</h3>
+      <button id="btn-focus" class="pill">Focus selection (F)</button>
+      <button id="btn-follow" class="pill secondary">Follow</button>
+      <button id="btn-surface" class="pill secondary">Surface</button>
+      <button id="btn-orbit" class="pill secondary">Orbit</button>
+      <button id="btn-free" class="pill secondary">Free flight</button>
+      <button id="btn-home" class="pill accent">Overview (H)</button>
+      <button id="btn-back" class="pill secondary">Back</button>
+      <div class="fine">WASD: move (free/surface) &middot; Shift: accelerate &middot; Esc: cancel autopilot</div>
+    </div>
+  </aside>
 
-<aside id="menu" class="glass" hidden>
-  <h4>Universe</h4>
-  <label>Seed <span class="hint">every seed is a different universe</span></label>
-  <div class="row"><input id="seed" type="number" min="0" step="1" value="1"><button id="btn-new" class="pill">Generate</button><button id="btn-rand" class="pill icon" title="Random seed">&#9858;</button></div>
-  <label>Quality</label>
-  <div class="seg" id="quality"><button data-q="low">Light</button><button data-q="medium" class="on">Balanced</button><button data-q="high">High</button><button data-q="ultra">Ultra</button></div>
-  <h4>Display</h4>
-  <label class="chk"><input type="checkbox" id="opt-labels" checked> Object labels</label>
-  <label class="chk"><input type="checkbox" id="opt-orbits" checked> Orbit paths</label>
-  <label class="chk"><input type="checkbox" id="opt-motion" checked> Local motion (orbits, spin, arms)</label>
-  <h4>About this model</h4>
-  <p class="fine">Cosmic expansion and linear growth use the engine's flat &Lambda;CDM background. The web is a truncated Zel'dovich approximation, not an N-body run. Galaxies, stars and planets are procedurally generated from the seed. Early-universe visuals are schematic, with contrast exaggerated — they do not represent solved Planck-era physics. The timeline extends into the future beyond today.</p>
-  <p class="fine">Scientific fidelity: SIMULATED (FLRW background), DERIVED (Zel'dovich structure, Keplerian orbits), ILLUSTRATIVE (galaxies, stars, planets, black holes). <a href="/research-lab" style="color:var(--accent, #58a6ff)">Open Research Laboratory &rarr;</a> — run evolution experiments, track populations, lineage and extinction.</p>
-  <h4>Model horizon</h4>
-  <p class="fine" id="horizon-info" style="font-size:0.75em;opacity:0.8">Validated scale-factor horizon: a=<span id="horizon-val">80</span> (t ≈ <span id="horizon-t">100</span> Gyr)</p>
-  <div class="row"><input id="horizon-a" type="number" value="400" step="1" style="width:6em"><button id="btn-extend-horizon" class="pill">Extend horizon</button><button id="btn-reset-horizon" class="pill icon" title="Reset to default horizon">&#8634;</button></div>
-  <p class="fine" style="font-size:0.7em;opacity:0.6">Extending the horizon continues the validated FLRW background to a later finite horizon. It does not promise infinite runtime.</p>
-  <h4>View mode</h4>
-  <div class="seg" id="view-mode"><button data-m="illustrative" class="on">Illustrative (procedural)</button><button data-m="scientific">Scientific Simulation (PM3D)</button></div>
-  <h4>Scientific Simulation</h4>
-  <div class="row"><input id="pm3d-seed" type="number" value="42"><button id="btn-pm3d-create" class="pill">Create PM3D sim</button><button id="btn-pm3d-step" class="pill">Advance a→2.0</button></div>
-  <div class="row"><button id="btn-pm3d-play" class="pill">Play</button><button id="btn-pm3d-pause" class="pill">Pause</button><button id="btn-pm3d-checkpoint" class="pill">Checkpoint</button><button id="btn-pm3d-restore" class="pill">Restore</button></div>
-  <div class="row"><label>Speed <input id="pm3d-speed" type="number" value="1" step="0.1" min="0.1" style="width:4em"></label><label>Amax <input id="pm3d-amax" type="number" value="10" step="1" style="width:4em"></label></div>
-  <p class="fine" id="pm3d-status" style="font-size:0.75em;opacity:0.7">No simulation loaded.</p>
-  <p class="fine" id="pm3d-stats" style="font-size:0.7em;opacity:0.9">a=– z=– t=– ρ_rms=–</p>
-</aside>
-
-<aside id="info" class="glass">
-  <div class="kicker" id="info-kind"></div>
-  <h2 id="info-name"></h2>
-  <dl id="info-rows"></dl>
-  <p id="info-text" class="fine"></p>
-</aside>
+  <aside id="sidebar-right">
+    <div class="panel" id="inspector-panel">
+      <h3 id="insp-kind">Inspector</h3>
+      <div id="insp-name"></div>
+      <dl id="insp-rows"></dl>
+      <p id="insp-text" class="fine"></p>
+    </div>
+    <div class="panel" id="habitat-panel" style="display:none">
+      <h3>Habitat / Environment</h3>
+      <dl id="hab-rows"></dl>
+      <div id="hab-actions" style="margin-top:8px"></div>
+      <p id="hab-text" class="fine"></p>
+    </div>
+  </aside>
+</div>
 
 <div id="ruler" class="glass" aria-label="Scale"><div class="track"><div class="fill"></div><div id="ruler-mark"><span id="ruler-val"></span></div></div><ul id="ruler-ticks"></ul></div>
 
@@ -83,7 +141,7 @@
   <div class="intro-card">
     <div class="logo big" aria-hidden="true"></div>
     <h1>Universe Observatory</h1>
-    <p class="lead">Watch a universe unfold from the first instant and continue into the future, then fly down from the cosmic web to a single planet. Everything you see is generated from one seed, and only what the camera can see is built. Cosmic time keeps advancing — there is no end at today.</p>
+    <p class="lead">Start a reference universe, control cosmic time, focus a system, inspect a planet, open a modeled habitat, and open the Fundamental Physics Laboratory. You can skip the guide at any time.</p>
     <div class="progress"><div id="prog-bar"></div></div>
     <div id="prog-label" class="fine">Preparing&hellip;</div>
     <div class="row center">
