@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Universe Observatory (1D laboratory)</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1b1f24;--mut:#59636e;--card:#f3f5f7;--line:#d0d7de;--acc:#0969da}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--mut:#9198a1;--card:#161b22;--line:#30363d;--acc:#58a6ff}}
+body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:12px 16px;border-bottom:1px solid var(--line)}h1{margin:0;font-size:18px}
+.note{color:var(--mut);font-size:12px;margin-top:4px}
+main{display:grid;grid-template-columns:260px 1fr;gap:12px;padding:12px 16px}
+@media (max-width:760px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px}
+label{display:block;margin:6px 0 2px;color:var(--mut);font-size:12px}
+select,input,button{width:100%;box-sizing:border-box;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+button{cursor:pointer;margin-top:6px}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+.row{display:flex;gap:6px}canvas{width:100%;height:240px;background:var(--bg);border:1px solid var(--line);border-radius:6px;display:block}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:8px 0}dt{color:var(--mut)}dd{margin:0;font-variant-numeric:tabular-nums}
+#msg{color:var(--mut);font-size:12px;min-height:1.4em}#insp{white-space:pre;font:12px ui-monospace,monospace}
+h2{font-size:13px;margin:10px 0 4px;color:var(--mut)}
+</style></head><body>
+<header><h1>Universe Observatory <span class="note">1D laboratory viewer</span></h1>
+<div class="note" id="status-note">Real solver output (dimensionless units). Not a 3D universe: no expansion, chemistry, stars, galaxies or life yet.</div></header>
+<main>
+<section class="card">
+<label for="preset">Preset</label><select id="preset"></select>
+<label for="gx">Grid cells n (16-512)</label><input id="gx" type="number" value="64" min="16" max="512">
+<label for="amp">Perturbation amplitude A</label><input id="amp" type="number" step="0.01" value="0.02">
+<button class="p" id="create">Create simulation</button>
+<div class="row"><button id="step">Step x10</button><button id="run">Run</button><button id="pause">Pause</button></div>
+<div class="row"><button id="save">Save</button><button id="load">Load last</button></div>
+<div id="msg"></div><div id="warn" style="color:#d29922;font-size:12px"></div>
+<h2>Status</h2><dl>
+<dt>time</dt><dd id="s-t">-</dd><dt>steps</dt><dd id="s-steps">-</dd><dt>running</dt><dd id="s-run">-</dd>
+<dt>energy drift</dt><dd id="s-e">-</dd><dt>total momentum</dt><dd id="s-p">-</dd><dt>config</dt><dd id="s-h">-</dd></dl>
+<h2>Inspect (click a plot)</h2><div id="insp">click the density plot</div>
+</section>
+<section class="card">
+<h2>Phase space: particle velocity v vs position x</h2><canvas id="phase" width="760" height="300"></canvas>
+<h2>Density: total (line), gas (dashed)</h2><canvas id="dens" width="760" height="300"></canvas>
+</section></main>
+<script>
+"use strict";
+const state = { snap: null, lastSave: null, ws: null };
+function $(id) { return document.getElementById(id); }
+function fmt(v, d) { return (typeof v === "number" && isFinite(v)) ? v.toExponential(d === undefined ? 3 : d) : "-"; }
+function minmax(arr) { let lo = Infinity, hi = -Infinity; for (const v of arr) { if (v < lo) lo = v; if (v > hi) hi = v; } return [lo, hi]; }
+function clear(ctx, w, h) { ctx.clearRect(0, 0, w, h); ctx.strokeStyle = "#8884"; ctx.strokeRect(0.5, 0.5, w - 1, h - 1); }
+function drawPhase(ctx, w, h, snap) {
+  clear(ctx, w, h);
+  if (!snap.particle_x) { ctx.fillStyle = "#888"; ctx.fillText("no particles in this preset", 10, 20); return; }
+  const vmax = Math.max(1e-9, ...snap.particle_v.map(Math.abs)) * 1.1;
+  ctx.fillStyle = "#58a6ff";
+  for (let i = 0; i < snap.particle_x.length; i++) {
+    const px = (snap.particle_x[i] - snap.x0) / (snap.x1 - snap.x0) * w;
+    const py = h / 2 - snap.particle_v[i] / vmax * (h / 2 - 4);
+    ctx.fillRect(px, py, 2, 2);
+  }
+  ctx.fillStyle = "#888"; ctx.fillText("v range +/-" + vmax.toExponential(2), 6, 12);
+}
+function drawLine(ctx, w, h, ys, lo, hi, color, dash) {
+  ctx.beginPath(); ctx.strokeStyle = color; ctx.setLineDash(dash || []);
+  for (let i = 0; i < ys.length; i++) {
+    const px = (i + 0.5) / ys.length * w, py = h - 4 - (ys[i] - lo) / Math.max(hi - lo, 1e-12) * (h - 8);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function drawDensity(ctx, w, h, snap) {
+  clear(ctx, w, h);
+  const all = snap.gas_density ? snap.density.concat(snap.gas_density) : snap.density;
+  const r = minmax(all), pad = (r[1] - r[0]) * 0.05 + 1e-12;
+  drawLine(ctx, w, h, snap.density, r[0] - pad, r[1] + pad, "#f85149", []);
+  if (snap.gas_density) drawLine(ctx, w, h, snap.gas_density, r[0] - pad, r[1] + pad, "#3fb950", [5, 4]);
+  ctx.fillStyle = "#888"; ctx.fillText("rho " + r[0].toFixed(3) + " .. " + r[1].toFixed(3), 6, 12);
+}
+function updateStatus(snap) {
+  $("s-t").textContent = fmt(snap.t); $("s-steps").textContent = String(snap.steps);
+  $("s-run").textContent = snap.running ? "yes" : "paused (on a step boundary)";
+  $("s-e").textContent = fmt(snap.energy_drift); $("s-p").textContent = fmt(snap.total_momentum);
+  $("s-h").textContent = snap.config_hash;
+  $("warn").textContent = (snap.warnings || []).join(" ");
+}
+function draw(snap) {
+  state.snap = snap; updateStatus(snap);
+  const pc = $("phase"), dc = $("dens");
+  drawPhase(pc.getContext("2d"), pc.width, pc.height, snap);
+  drawDensity(dc.getContext("2d"), dc.width, dc.height, snap);
+}
+async function api(path, method, body) {
+  const opt = { method: method || "GET", headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const res = await fetch(path, opt); const data = await res.json();
+  if (!res.ok) throw new Error(data.error || data.detail || res.statusText);
+  return data;
+}
+function say(text) { $("msg").textContent = text; }
+async function guard(fn) { try { await fn(); say(""); } catch (e) { say(String(e.message || e)); } }
+async function inspectAt(ev) {
+  const c = ev.target, r = c.getBoundingClientRect();
+  if (!state.snap) return;
+  const x = state.snap.x0 + (ev.clientX - r.left) / r.width * (state.snap.x1 - state.snap.x0);
+  await guard(async () => { $("insp").textContent = JSON.stringify(await api("/api/inspect?x=" + encodeURIComponent(x)), null, 1); });
+}
+function connect() {
+  const proto = location.protocol === "https:" ? "wss://" : "ws://";
+  state.ws = new WebSocket(proto + location.host + "/ws");
+  state.ws.onmessage = (m) => draw(JSON.parse(m.data));
+  state.ws.onclose = () => setTimeout(connect, 1000);
+}
+async function init() {
+  const presets = await api("/api/presets");
+  for (const k of Object.keys(presets)) { const o = document.createElement("option"); o.value = k; o.textContent = k + " - " + presets[k].doc; $("preset").appendChild(o); }
+  $("create").addEventListener("click", () => guard(async () => draw(await api("/api/session", "POST", { preset: $("preset").value, params: { n: parseInt($("gx").value, 10), A: parseFloat($("amp").value) } }).then(() => api("/api/snapshot")))));
+  $("step").addEventListener("click", () => guard(async () => { await api("/api/step", "POST", { n: 10 }); }));
+  $("run").addEventListener("click", () => guard(async () => { await api("/api/run", "POST", { delay: 0.02 }); }));
+  $("pause").addEventListener("click", () => guard(async () => { await api("/api/pause", "POST"); }));
+  $("save").addEventListener("click", () => guard(async () => { const r = await api("/api/save", "POST", {}); state.lastSave = r.id; say("saved " + r.id); }));
+  $("load").addEventListener("click", () => guard(async () => { if (!state.lastSave) throw new Error("save first"); await api("/api/load", "POST", { id: state.lastSave }); }));
+  $("dens").addEventListener("click", inspectAt); $("phase").addEventListener("click", inspectAt);
+  connect();
+}
+if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__UNIVERSE_TEST__) init().catch((e) => say(String(e)));
+</script></body></html>

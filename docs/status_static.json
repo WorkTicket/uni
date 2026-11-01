@@ -1,0 +1,77 @@
+{
+ "project": "big-bang-universe",
+ "current_phase": "R4 (1D complete) / R16 step 1 (1D observatory)",
+ "phase_status": "R3_complete; R4_1D_complete; R4_3D_and_cosmological_terms_not_started; R16_step1_partial",
+ "baseline_tests_unchanged": "24 original tests pass unmodified",
+ "measured_findings": {
+  "acoustic_mc_orders_64_to_1024": [
+   1.87,
+   1.95,
+   1.96,
+   1.97
+  ],
+  "jeans_unstable_orders": [
+   2.21,
+   2.1,
+   2.05
+  ],
+  "zeldovich_nonlinear_orders_dt_prop_dx": [
+   1.96,
+   2.01,
+   1.97
+  ],
+  "two_fluid_jeans_orders": "gas 2.02-2.12, particles 2.01-2.02",
+  "zeldovich_energy_drift_scales_as_dt_squared": "8.3e-4, 2.1e-4, 5.4e-5, 1.4e-5 for kick_cfl 0.1, 0.05, 0.025, 0.0125",
+  "gas_particle_momentum_exchange": "sum exact to 4e-18 with a real exchange of 7.7e-3",
+  "gas_particles_nonlinear_energy_drift": "3e-7 (t=0.26) -> 3.8e-3 (t=2.0) as collapse reaches 6x density; unverified beyond that",
+  "cosmology_cross_check": "two independent codes agree on age to 1.2e-5 relative"
+ },
+ "sabotage_check": {
+  "hydro": "7 of 7 broken variants detected",
+  "gravity": "6 of 6",
+  "nbody": "6 of 6",
+  "total": "19 of 19"
+ },
+ "subsystem_fidelity": {
+  "flrw_background": "implemented; cross-checked vs independent original code",
+  "euler_1d_solver": "implemented + verified T1",
+  "gravity_1d_gas": "implemented + verified T1",
+  "nbody_1d_particles_cic": "implemented + verified T1 (Zel'dovich exact nonlinear, two-fluid Jeans, exact momentum exchange)",
+  "observatory_1d": "server + viewer implemented; API/WebSocket/save-load verified; viewer script executed in Node against real snapshots but NEVER rendered in a browser",
+  "gravity_3d_pm": "pre-existing prototype only (T0/T1); not part of this verified work",
+  "cosmological_expansion_terms": "NOT started",
+  "thermochemistry_R5": "NOT started",
+  "stars_galaxies_planets": "phenomenological catalogs (pre-existing), not simulated physics",
+  "abiogenesis": "NOT SOLVED and not attempted; milestones C-H (prebiotic organisation, evolution, ecosystems, multiscale experience, autonomous research, final verification) not started",
+  "observatory_3d_R16": "NOT started",
+  "planetary_environment_milestone_A": "implemented (src/universe_engine/planet): 1D latitudinal energy-balance climate with ice-albedo feedback, stellar brightening, carbonate-silicate CO2 cycle, water phase, carbonate pH, radiogenic heat; 17 tests; Earth-tuned parameterisations, NOT predictive for other worlds; no life created",
+  "chemistry_network_milestone_B": "implemented (src/universe_engine/chemistry): element/charge-checked mass-action networks, thermodynamically consistent reversibility, T/pH-dependent rates, Radau ODE + Gillespie SSA, planet-environment coupling; 10 tests vs analytic solutions; rate parameters in tests are ILLUSTRATIVE, not measurements; no reaction database yet",
+  "viewer_3d": "procedural WebGL2 viewer (static/js); NOT coupled to the physics engine or to planet/chemistry state; rendered only in headless Chromium/SwiftShader",
+  "prebiotic_milestone_C": "partially implemented (src/universe_engine/prebiotic): polymer growth/hydrolysis with sourced bond dG (secondary source) + wet/dry cycling, RAF sets + random polymer model, osmotic vesicle protocells (division/lysis); 14 tests; kinetics and vesicle parameters are ASSUMED placeholders; protocell contents not yet coupled to chemistry networks",
+  "replicators_milestone_D": "implemented (src/universe_engine/replicators): supplied template-copying with explicit error rate, exact monomer accounting, Gillespie + tau-leap, lineage tree, duplex-stability mechanism (placeholder parameters) giving temperature-dependent selection; 9 tests incl. quasispecies/error-threshold theory; not coupled to protocells or chemistry networks"
+ },
+ "scientific_limitations": [
+  "All verified solvers are 1D, periodic and dimensionless.",
+  "No cosmological expansion (comoving) terms, thermochemistry, radiative transfer, stars, galaxies, planets, or life are simulated.",
+  "Beyond shell crossing / strong nonlinearity only conservation is checked, not accuracy (energy drift reaches ~4e-3); the observatory warns when drift > 1e-3.",
+  "Positivity-recovery paths verified only by fault injection.",
+  "Error tolerances are regression guards (~1.5x measured), not independent accuracy proofs.",
+  "Pause/checkpoint is bitwise only on step boundaries (observatory enforces this).",
+  "The browser viewer has not been rendered or clicked in a real browser in this environment; only its code was executed in Node against real data.",
+  "CI workflow written but never executed; no Windows run performed.",
+  "Old physical_models.gas_step demo unchanged and unverified."
+ ],
+ "preserved_work": {
+  "package_baseline_commit": "d66eef7",
+  "original_project": "audited separately, untouched (36/36 tests pass); docs/AUDIT_ORIGINAL_BIG_BANG_UNIVERSE.md"
+ },
+ "commands": {
+  "tests": "python -m pytest -q",
+  "benchmarks": "universe benchmark hydro|gravity|nbody",
+  "observatory": "universe-observatory --port 8000",
+  "doctor": "universe doctor",
+  "regenerate_status": "python scripts/write_status.py"
+ },
+ "next_action": "Milestone E: couple replicators to protocell compartments and to environment (planet T, resources), ecological feedback on resource pools, extinction/adaptation experiments with multiple seeds; then F (connect viewer to simulated state).",
+ "next_phase": "R4b then R5"
+}

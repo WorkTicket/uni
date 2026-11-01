@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Universe Observatory</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<canvas id="gl" aria-label="Universe view"></canvas>
+
+<div id="labels" aria-hidden="true"></div>
+<div id="tip" class="tip" hidden><b id="tip-name"></b><span id="tip-sub"></span></div>
+
+<header id="top" class="glass">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><span>Universe Observatory</span></div>
+  <nav id="crumbs" aria-label="Where you are"></nav>
+  <div class="spacer"></div>
+  <button id="btn-dive" class="pill accent" title="Fly from the cosmic web to a planet (D)">&#10022; Dive</button>
+  <button id="btn-home" class="pill" title="Back to the whole universe (H)">Overview</button>
+  <button id="btn-menu" class="pill icon" title="Settings" aria-label="Settings">&#9776;</button>
+</header>
+
+<aside id="menu" class="glass" hidden>
+  <h4>Universe</h4>
+  <label>Seed <span class="hint">every seed is a different universe</span></label>
+  <div class="row"><input id="seed" type="number" min="0" step="1" value="1"><button id="btn-new" class="pill">Generate</button><button id="btn-rand" class="pill icon" title="Random seed">&#9858;</button></div>
+  <label>Quality</label>
+  <div class="seg" id="quality"><button data-q="low">Light</button><button data-q="medium" class="on">Balanced</button><button data-q="high">Ultra</button></div>
+  <h4>Display</h4>
+  <label class="chk"><input type="checkbox" id="opt-labels" checked> Object labels</label>
+  <label class="chk"><input type="checkbox" id="opt-orbits" checked> Orbit paths</label>
+  <label class="chk"><input type="checkbox" id="opt-motion" checked> Local motion (orbits, spin, arms)</label>
+  <h4>About this model</h4>
+  <p class="fine">Cosmic expansion and linear growth use the engine's flat &Lambda;CDM background. The web is a truncated Zel'dovich approximation, not an N-body run. Galaxies, stars and planets are procedurally generated from the seed, and nothing here claims to simulate star, planet or life formation. Early-universe visuals are schematic, with contrast exaggerated.</p>
+</aside>
+
+<aside id="info" class="glass">
+  <div class="kicker" id="info-kind"></div>
+  <h2 id="info-name"></h2>
+  <dl id="info-rows"></dl>
+  <p id="info-text" class="fine"></p>
+</aside>
+
+<div id="ruler" class="glass" aria-label="Scale"><div class="track"><div class="fill"></div><div id="ruler-mark"><span id="ruler-val"></span></div></div><ul id="ruler-ticks"></ul></div>
+
+<footer id="dock" class="glass">
+  <button id="btn-play" class="play" title="Play / pause (Space)" aria-label="Play">&#9654;</button>
+  <div class="clock">
+    <div id="t-main">0</div>
+    <div class="sub"><span id="t-epoch"></span></div>
+  </div>
+  <div class="tl">
+    <div class="ticks" id="tl-ticks"></div>
+    <input id="tl" type="range" min="0" max="1000" value="0" step="1" aria-label="Cosmic time">
+    <div class="stats"><span>Temperature <b id="t-temp"></b></span><span>Redshift <b id="t-z"></b></span><span>Size of region <b id="t-size"></b></span></div>
+  </div>
+  <div class="seg small" id="speed"><button data-s="0.25">&frac14;&times;</button><button data-s="1" class="on">1&times;</button><button data-s="4">4&times;</button><button data-s="16">16&times;</button></div>
+  <button id="btn-now" class="pill" title="Jump to today (13.8 Gyr)">Today</button>
+</footer>
+<div id="epoch-card" class="glass"><b id="ep-name"></b><p id="ep-text"></p></div>
+<div id="hint">Scroll to fly into whatever you point at &middot; drag to orbit &middot; click a label to travel &middot; Backspace zooms out</div>
+
+<div id="intro">
+  <div class="intro-card">
+    <div class="logo big" aria-hidden="true"></div>
+    <h1>Universe Observatory</h1>
+    <p class="lead">Watch a universe unfold from the first instant to today, then fly down from the cosmic web to a single planet. Everything you see is generated from one seed, and only what the camera can see is built.</p>
+    <div class="progress"><div id="prog-bar"></div></div>
+    <div id="prog-label" class="fine">Preparing&hellip;</div>
+    <div class="row center">
+      <button id="btn-begin" class="pill accent big" disabled>Begin the Big Bang</button>
+      <button id="btn-skip" class="pill big" disabled>Skip to today</button>
+    </div>
+    <p id="intro-err" class="err" hidden></p>
+  </div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/cosmo.js"></script>
+<script src="js/webgen.js"></script>
+<script src="js/gl.js"></script>
+<script src="js/shaders.js"></script>
+<script src="js/shaders_gal.js"></script>
+<script src="js/shaders_body.js"></script>
+<script src="js/layers.js"></script>
+<script src="js/layers2.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/app.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

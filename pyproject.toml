@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "universe-engine-starter"
+version = "0.1.0"
+description = "Validated FLRW background and linear density perturbation foundation"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24,<3", "PyYAML>=6,<7", "scipy>=1.10"]
+[project.optional-dependencies]
+dev = ["pytest>=7,<10", "fastapi>=0.110", "httpx>=0.27", "websockets>=12"]
+plots = ["matplotlib>=3.7"]
+observatory = ["fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.27", "websockets>=12"]
+[project.scripts]
+universe-observatory = "universe_engine.observatory.server:main"
+universe = "universe_engine.cli:main"
+universe-evolve = "universe_engine.evolve_cli:main"
+universe-physics = "universe_engine.physical_cli:main"
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.setuptools.package-data]
+"universe_engine.observatory" = ["static/*.html", "static/js/*.js", "static/css/*.css"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.universe_physical_extensions]
+status = "approximate demonstrator; not research validated"
