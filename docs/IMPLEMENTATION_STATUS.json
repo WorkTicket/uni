@@ -54,7 +54,7 @@
     "The browser viewer has not been rendered or clicked in a real browser in this environment; only its code was executed in Node/TestClient against real data.",
     "CI workflow written but never executed; no Windows run performed.",
     "This release does not simulate fully resolved galaxies, stars, planets, or life.",
-    "PM3D uses a periodic representative volume; finite-volume/cosmic-variance effects apply at low k.",
+    "PM3D uses a periodic representative volume; finite-volume/cosmic-variance effects apply at low k."
   ],
   "preserved_work": {
     "package_baseline_commit": "d66eef7",
