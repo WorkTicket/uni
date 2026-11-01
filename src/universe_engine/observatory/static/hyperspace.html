@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Higher-Dimensional Research — Universe Engine</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  #hd-shell { display: grid; grid-template-columns: 360px 1fr; gap: 12px; padding: 12px 16px; height: calc(100vh - 44px); overflow: hidden; }
+  @media (max-width: 900px) { #hd-shell { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow: auto; }
+  h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.06em; }
+  label { display: block; margin: 6px 0 2px; color: var(--muted-foreground); font-size: 12px; }
+  input, select, button { width: 100%; box-sizing: border-box; padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--input); color: var(--foreground); }
+  button { cursor: pointer; margin-top: 6px; }
+  button.p { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  button.secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  button.danger { background: var(--destructive); color: var(--destructive-foreground); border-color: var(--destructive); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; margin-top: 8px; }
+  .row > * { flex: 1; width: auto; }
+  .small { font-size: 11px; color: var(--muted-foreground); margin-top: 4px; }
+  #msg { color: var(--destructive); font-size: 12px; min-height: 1.4em; }
+  #ok { color: var(--success); font-size: 12px; min-height: 1.4em; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-size: 13px; }
+  dt { color: var(--muted-foreground); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  canvas { width: 100%; height: 260px; background: var(--background); border: 1px solid var(--border); border-radius: 6px; display: block; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted-foreground); }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 10px; background: var(--muted); color: var(--muted-foreground); margin-right: 4px; }
+  .badge.simulated { background: var(--success); color: var(--success-foreground); }
+  .badge.derived { background: var(--warning); color: var(--warning-foreground); }
+  .badge.illustrative { background: var(--muted); color: var(--muted-foreground); }
+  .badge.speculative { background: var(--destructive); color: var(--destructive-foreground); }
+  .hide { display: none; }
+  #hd-main { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+  .fid { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<header class="glass" style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+  <span style="font-weight:700">Higher-Dimensional Research</span>
+  <span style="font-size:12px;color:var(--muted-foreground)">Brane cosmology &bull; bulk geometry &bull; compact dimensions &bull; origin events</span>
+  <div style="margin-left:auto"></div>
+  <button class="pill secondary" onclick="location='/'">&#8592; Universe view</button>
+</header>
+<div id="hd-shell">
+  <aside id="hd-sidebar">
+    <div class="card">
+      <h2>Bulk geometry</h2>
+      <label>Geometry</label>
+      <select id="g-geom">
+        <option value="minkowski_4d">Minkowski 4D (flat)</option>
+        <option value="minkowski_5d">Minkowski 5D (flat bulk)</option>
+        <option value="circle">Circle compactification</option>
+        <option value="brane_5d">Brane-world 5D bulk</option>
+      </select>
+      <label>Compact radius R</label><input id="g-radius" type="number" step="0.1" value="1.0">
+      <button class="p" id="g-build">Build geometry</button>
+      <div id="g-msg"></div>
+    </div>
+    <div class="card">
+      <h2>Brane-world parameters</h2>
+      <label>Lambda_5 (5D cosmological constant)</label><input id="b-lambda5" type="number" step="0.1" value="-6.0">
+      <label>G_5 (5D gravitational constant)</label><input id="b-g5" type="number" step="0.1" value="1.0">
+      <label>Brane tension lambda</label><input id="b-lambda" type="number" step="0.1" value="10.0">
+      <label>Collision model</label><select id="b-collision"><option>none</option><option>ekpyrotic</option><option>prescribed</option></select>
+      <label>Collision time</label><input id="b-colltime" type="number" step="0.1" value="">
+      <label>Transition valid?</label><select id="b-transition"><option>no</option><option>yes</option></select>
+      <button class="p" id="b-derive">Derive 4D constants</button>
+      <div id="b-msg"></div>
+    </div>
+    <div class="card">
+      <h2>Numerical evolution</h2>
+      <label>Start scale factor a</label><input id="e-a0" type="number" step="1e-6" value="1e-10">
+      <label>Radiation density</label><input id="e-rhor" type="number" step="1e6" value="1e8">
+      <label>dt</label><input id="e-dt" type="number" step="0.001" value="0.01">
+      <label>Steps</label><input id="e-steps" type="number" value="10">
+      <button class="p" id="e-run">Run brane evolution</button>
+      <div id="e-msg"></div>
+    </div>
+    <div class="card">
+      <h2>Origin events</h2>
+      <button class="secondary" id="o-list">List origin events</button>
+      <div id="o-list-out" style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px;font-size:11px"></div>
+    </div>
+  </aside>
+  <main id="hd-main" class="card">
+    <h2 id="view-name">Higher-Dimensional Research Laboratory</h2>
+    <p class="small">Scientific status: SPECULATIVE / RESEARCH. Higher-dimensional models are theoretical possibilities, not established knowledge.</p>
+    <div id="view-geometry" class="hide">
+      <h2>Bulk geometry</h2>
+      <dl id="geom-dl"></dl>
+    </div>
+    <div id="view-brane" class="hide">
+      <h2>Brane-world model</h2>
+      <dl id="brane-dl"></dl>
+    </div>
+    <div id="view-evolution" class="hide">
+      <h2>Brane evolution history</h2>
+      <canvas id="evol-canvas" width="760" height="260"></canvas>
+      <div style="margin-top:6px"></div>
+      <table id="evol-table"></table>
+    </div>
+    <div id="view-origin" class="hide">
+      <h2>Universe-origin events</h2>
+      <div id="origin-out"></div>
+    </div>
+  </main>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let currentView = null;
+function say(el, text, kind) { const e = $(el); e.textContent = text; e.hidden = !text; e.className = kind === "ok" ? "ok" : (kind === "err" ? "destructive" : ""); }
+async function api(path, method, body) {
+  const opt = { method: method || "GET", headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const res = await fetch(path, opt);
+  let data;
+  try { data = await res.json(); } catch { data = {}; }
+  if (!res.ok) throw new Error((data && data.error) || data.detail || res.statusText);
+  return data;
+}
+function show(id) {
+  document.querySelectorAll("#hd-main > div").forEach((d) => d.classList.add("hide"));
+  $(id).classList.remove("hide");
+  currentView = id;
+}
+function classificationBadge(c) {
+  const cl = (c || "speculative").toLowerCase();
+  let kind = "speculative";
+  if (cl.includes("simulated")) kind = "simulated";
+  else if (cl.includes("derived")) kind = "derived";
+  else if (cl.includes("illustrative")) kind = "illustrative";
+  return `<span class="badge ${kind}">${cl}</span>`;
+}
+// ---- geometry ----
+$("g-build").onclick = async () => {
+  const geom = $("g-geom").value;
+  const radius = parseFloat($("g-radius").value || 1);
+  try {
+    let data;
+    if (geom === "circle") data = await api(`/api/geometry/circle/${radius}`);
+    else if (geom === "minkowski_4d") data = await api("/api/geometry/flat4d");
+    else if (geom === "minkowski_5d") data = await api("/api/geometry/flat5d");
+    else data = await api("/api/geometry/flat5d"); // brane 5D uses same flat5d as base
+    show("view-geometry");
+    const dl = $("geom-dl"); dl.innerHTML = "";
+    const rows = [
+      ["Chart", data.chart ? data.chart.name : data.name || geom],
+      ["Dimensions", data.chart ? data.chart.coords.join(", ") : "N/A"],
+      ["Signature", data.metric ? data.metric.signature.signature_string : "N/A"],
+      ["Compactification", JSON.stringify(data.compactification || {})],
+      ["Classification", classificationBadge(data.classification || "derived")],
+      ["Fidelity", "DERIVED (mathematical projection) — not measured spacetime"],
+    ];
+    for (const [k, v] of rows) { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.innerHTML = v; dl.appendChild(dt); dl.appendChild(dd); }
+    say("g-msg", "Geometry built: " + geom, "ok");
+  } catch (e) { say("g-msg", String(e.message || e), "err"); }
+};
+// ---- brane ----
+$("b-derive").onclick = async () => {
+  try {
+    const data = await api("/api/brane/parameters");
+    show("view-brane");
+    const dl = $("brane-dl"); dl.innerHTML = "";
+    const rows = [
+      ["Lambda_5", data.Lambda_5],
+      ["G_5", data.G_5],
+      ["k (AdS scale)", data.k],
+      ["Brane tension", data.lambda_brane],
+      ["G_4 (derived)", data.G_4],
+      ["Lambda_4 (derived)", data.Lambda_4],
+      ["Classification", classificationBadge(data.classification)],
+      ["Fidelity", "DERIVED (effective 4D reduction) — speculative research model"],
+    ];
+    for (const [k, v] of rows) { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.appendChild(dt); dl.appendChild(dd); }
+    say("b-msg", "4D constants derived", "ok");
+  } catch (e) { say("b-msg", String(e.message || e), "err"); }
+};
+$("e-run").onclick = async () => {
+  try {
+    const body = {
+      Lambda_5: parseFloat($("b-lambda5").value || -6),
+      G_5: parseFloat($("b-g5").value || 1),
+      lambda_brane: parseFloat($("b-lambda").value || 10),
+      a_start: parseFloat($("e-a0").value || 1e-10),
+      rho_radiation: parseFloat($("e-rhor").value || 1e8),
+      steps: parseInt($("e-steps").value || 10),
+      dt: parseFloat($("e-dt").value || 0.01),
+    };
+    const data = await api("/api/brane/simulate", "POST", body);
+    show("view-evolution");
+    const canvas = $("evol-canvas"); const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const hist = data.history;
+    if (!hist || hist.length < 2) { ctx.fillStyle = "#888"; ctx.fillText("no evolution data", 10, 20); }
+    else {
+      const ts = hist.map((h) => h.t);
+      const as = hist.map((h) => h.a);
+      const x0 = ts[0], x1 = ts[ts.length - 1];
+      let y0 = Math.min(...as), y1 = Math.max(...as);
+      if (y1 === y0) y1 = y0 + 1;
+      const pad = (y1 - y0) * 0.05;
+      y0 -= pad; y1 += pad;
+      ctx.strokeStyle = "#58a6ff"; ctx.beginPath();
+      for (let i = 0; i < hist.length; i++) {
+        const px = (ts[i] - x0) / Math.max(x1 - x0, 1e-12) * (canvas.width - 8) + 4;
+        const py = canvas.height - 4 - (as[i] - y0) / (y1 - y0) * (canvas.height - 8);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#888"; ctx.font = "11px ui-monospace";
+      ctx.fillText("Brane scale factor a(t)  DERIVED numerical evolution", 6, 12);
+    }
+    const tbl = $("evol-table"); tbl.innerHTML = "<tr><th>t</th><th>a</th><th>H</th><th>rho</th><th>junction residual</th><th>validity</th></tr>";
+    for (const h of hist) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${h.t.toExponential(2)}</td><td>${h.a.toExponential(2)}</td><td>${h.H.toExponential(2)}</td><td>${h.rho.toExponential(2)}</td><td>${h.junction_residual.toExponential(2)}</td><td>${h.validity}</td>`;
+      tbl.appendChild(tr);
+    }
+    say("e-msg", "Evolution ran: " + hist.length + " steps", "ok");
+  } catch (e) { say("e-msg", String(e.message || e), "err"); }
+};
+// ---- origin events ----
+$("o-list").onclick = async () => {
+  try {
+    const data = await api("/api/origin/events");
+    show("view-origin");
+    const el = $("origin-out");
+    if (!data.origins || data.origins.length === 0) { el.innerHTML = "<p>No origin events recorded.</p>"; return; }
+    let html = "<table><tr><th>Event ID</th><th>Model</th><th>Time</th><th>Classification</th><th>Provenance</th></tr>";
+    for (const ev of data.origins) {
+      html += `<tr><td>${ev.event_id || ev.id}</td><td>${ev.model_id || ev.model}</td><td>${ev.creation_time !== undefined ? ev.creation_time.toExponential(2) : "-"}</td><td>${classificationBadge(ev.theory_classification)}</td><td>${ev.validity_metadata ? JSON.stringify(ev.validity_metadata) : "-"}</td></tr>`;
+    }
+    html += "</table>";
+    el.innerHTML = html;
+  } catch (e) { say("o-list", String(e.message || e), "err"); }
+};
+</script>
+</body>
+</html>

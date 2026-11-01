@@ -29,6 +29,7 @@
       this.camMode = "orbit";        // orbit | follow | surface | free | micro
       this.followTarget = null;      // {node, t} for follow/surface tracking
       this.followDist = 0;           // metres from target centre
+      this.freeYaw = 0; this.freePitch = 0; this.freeVel = [0, 0, 0]; this.freeSpeed = 20; // free-flight state
       this.simEnvs = null;           // planet index -> {liqW, atmOk} from the habitat simulation
       this.micro = false;            // microscopic/chemical-field view mode
       this.resize();
@@ -87,7 +88,7 @@
       const D = U.Cosmo.D(U.Cosmo.aOfT(this.t));
       for (const n of chain) if (n.kind === "halo") this.uni.updateHalo(n, D);
       const st = chain.find((n) => n.kind === "star");
-      if (st && st.children) this.system.layout(st, this.sysClk);
+      if (st && st.children) this.system.layout(st, this.t);
     }
     camFrames(chain) {                                  // camera position (metres) in the frame of every chain node
       const out = new Array(chain.length); let p = this.pos.slice();
@@ -125,7 +126,9 @@
     follow(node, distM) { this.camMode = "follow"; this.followTarget = { node, t: this.t }; this.followDist = distM || this.limits(node).pop; this.recenter = 1.0; }
     surface(node) { this.camMode = "surface"; this.followTarget = { node, t: this.t }; const lim = this.limits(node); this.followDist = lim.min * 1.15; this.recenter = 1.0; }
     orbitMode() { this.camMode = "orbit"; this.followTarget = null; }
-    freeMode() { this.camMode = "free"; this.followTarget = null; }
+    freeMode() { this.camMode = "free"; this.followTarget = null; this.freeYaw = 0; this.freePitch = 0; this.freeVel = [0, 0, 0]; }
+    freeMove(x, y, z) { this.freeVel = [x, y, z]; }
+    freeLook(dx, dy) { this.freeYaw += dx * 0.004; this.freePitch = U.clamp((this.freePitch || 0) + dy * 0.004, -1.45, 1.45); this.q = Q.mul(Q.axisAngle([0, 1, 0], this.freeYaw), Q.axisAngle([1, 0, 0], this.freePitch)); this.recenter = 0; }
     microMode(on) { this.micro = !!on; }
     setSimEnvs(envs) { this.simEnvs = envs || null; this.emit("sim-envs", envs); }
     modeOf() { return this.camMode; }
@@ -281,7 +284,7 @@
         case "galaxy": return { name: h.node.name, sub: "radius " + U.fmtDist(h.node.size) };
         case "cloud": return { name: "Star", sub: "click or scroll to travel" };
         case "local": return { name: U.name(h.spec.id), sub: "Class " + U.StarPhys.spectralClass(h.spec.T) + " star · " + h.spec.M.toFixed(2) + " M☉" };
-        case "body": return { name: h.node.name, sub: h.node.data.cls };
+        case "body": return { name: h.node.name, sub: h.node.data.kind === "blackhole" ? "Black hole · " + U.fmtSci(h.node.data.massMsun, "M☉") : h.node.data.cls };
       }
       return null;
     }
@@ -292,7 +295,8 @@
       // cosmic clock
       if (this.playing) {
         this.setS(this.s + dt * this.speed / TOTAL_SECONDS);
-        if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
+        if (this.stopAtNow && this.s >= U.Cosmo.NOW_S) { this.s = U.Cosmo.NOW_S; this.t = U.Cosmo.tOfS(U.Cosmo.NOW_S); this.pause(); this.emit("at-now"); }
+        else if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
       }
       // local clocks (decoupled from cosmic time so planets and spiral arms move at a watchable pace)
       const kind = this.node.kind, ur = this.userRate;
@@ -316,13 +320,30 @@
       // follow / surface tracking: hold a stable offset from the tracked body, keep it centred
       if ((this.camMode === "follow" || this.camMode === "surface") && this.followTarget && this.followTarget.node) {
         const ft = this.followTarget.node;
-        if (ft !== this.node) { this.setNode(ft); this.recenter = 1.0; }
+        const root = this.uni ? this.uni.root : null;
+        const rootRef = root ? root : this.node;
+        if (ft !== this.node) {
+          // camera position in the universe frame
+          const camU = V.add(this.pos.slice(), this.node.posIn(rootRef));
+          // express it relative to the follow target
+          this.pos = V.sub(camU, ft.posIn(rootRef));
+          this.setNode(ft);
+          this.recenter = 1.0;
+        }
         const lim = this.limits(ft);
         const d = V.len(this.pos);
         let mind = this.camMode === "surface" ? Math.max(lim.min * 1.1, ft.size * 1.02) : lim.min;
         if (d < mind) this.pos = V.scale(this.pos, mind / Math.max(d, 1e-9));
         if (d > lim.pop * 4) this.pos = V.scale(this.pos, (lim.pop * 4) / Math.max(d, 1e-9));
         this.recenter = Math.max(this.recenter, 0.3);
+      }
+      // free flight: translate by yaw/pitch, apply velocity, keep orientation user-controlled
+      if (this.camMode === "free") {
+        const basis = Q.basis(this.q);
+        const fwd = basis[2]; const rgt = basis[0]; const up = basis[1];
+        const move = V.add(V.add(V.scale(fwd, this.freeVel[2]), V.scale(rgt, this.freeVel[0])), V.scale(up, this.freeVel[1]));
+        this.pos = V.add(this.pos, V.scale(move, dt * this.freeSpeed));
+        // free flight orientation is controlled by mouse look (applied below via input), not recentred
       }
       // recentre on the focus
       if (this.recenter > 0) {
@@ -361,7 +382,7 @@
     // choose a destination procedurally and fly there from wherever the camera is
     planDive(rngSeed) {
       const uni = this.uni, r = U.rng((rngSeed >>> 0) ^ 0x1234567), tG = U.Cosmo.TNOW / U.GYR;
-      this.setS(U.Cosmo.NOW_S); this.pause();
+      // Navigation must never change cosmic time. Do not jump to NOW and do not pause.
       let halo = null, gal = null;
       for (let tries = 0; tries < 400 && !gal; tries++) {
         const i = Math.floor(600 + r() * Math.min(uni.K - 700, 9000)); if (uni.kind[i] > 1 || uni.members[i] > 6 || uni.logM[i] < 11.6) continue;
@@ -473,6 +494,7 @@
     labelTargets() {
       const n = this.node, out = [], p = this.pos;
       if (n.kind === "star") { for (const c of n.children || []) if (!c.data.moon) out.push({ node: c, rel: V.sub(c.local, p), size: Math.max(c.size, 1) , minPx: 0 }); }
+      else if (n.kind === "blackhole") { /* no children labels */ }
       else if (n.kind === "planet") {
         for (const m of n.children || []) out.push({ node: m, rel: V.sub(m.local, p), size: m.size, minPx: 0 });
         out.push({ node: n.parent, rel: V.sub(V.scale(n.local, -1), p), size: n.parent.data.R, minPx: 0 });
@@ -488,6 +510,7 @@
         case "halo": rows.push(["Type", d.groupName], ["Mass", U.fmtSci(Math.pow(10, d.logM), "M☉")], ["Virial radius", U.fmtDist(d.rvir)], ["Member galaxies", String(d.members)]); break;
         case "galaxy": rows.push(["Type", U.GALAXY_KINDS[d.kind] + " galaxy"], ["Halo mass", U.fmtSci(Math.pow(10, d.logM + 0.6), "M☉")], ["Radius", U.fmtDist(n.size)], ["Formed", U.fmtTime(d.tForm)], ["Spiral arms", d.kind < 2 ? String(d.arms) : "-"]); break;
         case "star": rows.push(["Spectral class", d.cls], ["Mass", d.M.toFixed(2) + " M☉"], ["Luminosity", d.L < 100 ? d.L.toFixed(2) + " L☉" : U.fmtSci(d.L, "L☉")], ["Temperature", d.T.toFixed(0) + " K"], ["Radius", (d.R / U.RSUN).toFixed(2) + " R☉"], ["Age", d.age.toFixed(2) + " Gyr"], ["Planets", String((n.children || []).filter((p) => !p.data.moon).length)]); break;
+        case "blackhole": rows.push(["Model", d.model], ["Mass", d.massMsun.toFixed(1) + " M☉"], ["Schwarzschild radius", U.fmtDist(d.rSchwarzschild)], ["Photon sphere", U.fmtDist(d.rPhotonSphere)], ["Critical impact", U.fmtDist(d.bCritical)], ["Classification", d.classification], ["Provenance", d.provenance]); break;
         case "planet": case "moon": {
           const simRows = [];
           if (d.simLiqW !== undefined) simRows.push(["Liquid water", (d.simLiqW * 100).toFixed(0) + "%"]);

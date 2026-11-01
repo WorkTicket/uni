@@ -74,19 +74,19 @@
   },
   "next_action": "Milestone E: couple replicators to protocell compartments and to environment (planet T, resources), ecological feedback on resource pools, extinction/adaptation experiments with multiple seeds; then F (connect viewer to simulated state).",
   "next_phase": "R4b then R5",
-  "updated_utc": "2026-11-01T03:42:09+00:00",
-  "repo_revision_at_generation": "9b7c354",
+  "updated_utc": "2026-11-01T06:40:50+00:00",
+  "repo_revision_at_generation": "93713c4",
   "test_command": "python -m pytest -q",
   "test_counts": {
-    "passed": 239,
+    "passed": 353,
     "failed": 0,
     "skipped": 1
   },
-  "test_summary_line": "239 passed, 1 skipped, 1 warning in 37.17s",
+  "test_summary_line": "353 passed, 1 skipped, 1 warning in 65.39s (0:01:05)",
   "benchmarks": {
     "hydro": {
       "exit_code": 0,
-      "run_id": "20261101T034159Z",
+      "run_id": "20261101T064031Z",
       "checks": "106/106",
       "benchmarks": [
         {
@@ -133,7 +133,7 @@
     },
     "gravity": {
       "exit_code": 0,
-      "run_id": "20261101T034207Z",
+      "run_id": "20261101T064048Z",
       "checks": "40/40",
       "benchmarks": [
         {
@@ -165,7 +165,7 @@
     },
     "nbody": {
       "exit_code": 0,
-      "run_id": "20261101T034209Z",
+      "run_id": "20261101T064049Z",
       "checks": "37/37",
       "benchmarks": [
         {

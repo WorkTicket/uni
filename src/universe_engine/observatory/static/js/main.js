@@ -23,6 +23,17 @@
     let last = performance.now();
     function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; app.update(dt); app.render(); requestAnimationFrame(frame); }
     if (!q.has("manual")) requestAnimationFrame(frame);
+    // WebGL context loss / restoration handling
+    const canvas = $("gl");
+    let lost = false;
+    canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); lost = true; }, false);
+    canvas.addEventListener("webglcontextrestored", () => { lost = false; app.resize(); }, false);
+    const renderLoop = () => {
+      if (lost) { requestAnimationFrame(renderLoop); return; }
+      const now = performance.now(); const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      app.update(dt); app.render(); requestAnimationFrame(renderLoop);
+    };
+    if (!q.has("manual")) requestAnimationFrame(renderLoop);
     // test / scripting hook (also handy from the browser console)
     g.__universe = {
       app, U,

@@ -315,7 +315,45 @@
     star.size = Math.max(last ? last.data.a * 1.4 : 5 * AU, 0.5 * AU, d.R * 60);
     // optional belt
     star.data.belt = list.length > 2 && r() < 0.5 ? { a: list[Math.floor(list.length / 2)].data.a * 1.15, w: 0.12 } : null;
+    // rare black-hole companion (deterministic from seed, stable identity)
+    if (list.length >= 2 && r() < 0.05) {
+      const bh = U.blackholeInSystem(star, 5 + 40 * r());
+      star.children.push(bh); list.push(bh);
+    }
     return list;
+  };
+
+  // ---- Schwarzschild black-hole node -------------------------------------------------------
+  // Persistent black-hole object: mass, Schwarzschild radius, photon sphere, critical impact
+  // parameter. Deterministic from seed, stable identity, no regeneration on camera moves.
+  U.makeBlackHoleNode = function (massMsun, seedId, parent) {
+    const n = new Node("blackhole", seedId, parent);
+    const Mkg = massMsun * U.MSUN;
+    const rs = U.BH.schwarzschildRadius(Mkg);
+    const rph = U.BH.photonSphere(Mkg);
+    const bcrit = U.BH.criticalImpact(Mkg);
+    n.name = "BH " + U.name(seedId);
+    n.size = rs * 1.25;                                        // visual size slightly above horizon
+    n.data = {
+      kind: "blackhole", massMsun, massKg: Mkg,
+      rSchwarzschild: rs, rPhotonSphere: rph, bCritical: bcrit,
+      rsAU: rs / U.AU, rphAU: rph / U.AU,
+      spin: 0, charge: 0, hasAccretionDisk: false,
+      model: "Schwarzschild (static, non-spinning, analytic)",
+      provenance: "Analytic Schwarzschild solution; lensing = weak-deflection approximation (alpha = 2*r_s/b, valid b >> r_s)",
+      classification: "SIMULATED (analytic GR limit)",
+    };
+    return n;
+  };
+  U.blackholeInSystem = function (star, massMsun) {
+    const r = U.rng(U.hash2(star.data.seed, 0xb00b));
+    const bh = U.makeBlackHoleNode(massMsun, U.hash3(star.data.seed, 0x900, 1), star);
+    // place the black hole on a wide orbit around the star
+    const a = 200 * AU * (0.5 + r());
+    const P = Math.sqrt(Math.pow(a / AU, 3) / star.data.M) * U.YEAR;
+    bh.data = Object.assign(bh.data, { a, P, M0: r() * U.TAU, ecc: 0.1 * r(), inc: 0.1 * r(), node: r() * U.TAU, omega: r() * U.TAU, star });
+    bh.local = U.orbitPos(bh.data, U.Cosmo.TNOW, [0, 0, 0]);
+    return bh;
   };
 
   // Keplerian position (metres) of a planet/moon in its parent's frame at time `t` (seconds).

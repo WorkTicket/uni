@@ -9,6 +9,8 @@
   U.AU = 1.495978707e11; U.LY = 9.4607304725808e15; U.RSUN = 6.957e8; U.MSUN = 1.98847e30;
   U.REARTH = 6.371e6; U.RJUP = 7.1492e7; U.YEAR = 3.15576e7; U.GYR = U.YEAR * 1e9; U.DAY = 86400;
   U.TAU = Math.PI * 2;
+  U.G = 6.67430e-11;      // gravitational constant, m^3 kg^-1 s^-2
+  U.C = 299792458;        // speed of light, m/s
 
   // ---- hashing / RNG (deterministic: the whole universe is a pure function of the seed) -----
   U.hash32 = function (x) {
@@ -171,5 +173,21 @@
     b = T >= 66 ? 255 : T <= 19 ? 0 : 138.5177312231 * Math.log(T - 10) - 305.0447927307;
     const f = (x) => Math.pow(U.clamp(x, 0, 255) / 255, 2.2);
     return [f(r), f(gg), f(b)];
+  };
+
+  // ---- Schwarzschild black-hole physics (analytic, non-spinning) --------------------------
+  // r_s = 2GM/c^2 ; photon sphere r_ph = 3GM/c^2 = 1.5 r_s ; critical impact parameter
+  // b_crit = 3*sqrt(3)*GM/c^2 = (3*sqrt(3)/2) * r_s. Approximations: static Schwarzschild
+  // spacetime, no frame dragging, no accretion-disk back-reaction. Lensing is the
+  // weak-deflection / weak-lensing analytic approximation, not a full ray-traced GR image.
+  U.BH = {
+    schwarzschildRadius(massKg) { return 2 * U.G * massKg / (U.C * U.C); },
+    photonSphere(massKg) { return 3 * U.G * massKg / (U.C * U.C); },
+    criticalImpact(massKg) { return 3 * Math.sqrt(3) * U.G * massKg / (U.C * U.C); },
+    // Weak-lensing deflection angle (radians) for a light ray with impact parameter b:
+    // alpha = 4GM/(c^2 b) = 2 r_s / b. Valid for b >> r_s; not valid near the photon sphere.
+    lensingAngle(massKg, b) { return 2 * U.BH.schwarzschildRadius(massKg) / Math.max(b, 1e-6); },
+    // Mass in solar masses -> Schwarzschild radius in metres
+    schwarzschildRadiusMsun(mSun) { return 2 * U.G * mSun * U.MSUN / (U.C * U.C); },
   };
 })(typeof window !== "undefined" ? window : globalThis);

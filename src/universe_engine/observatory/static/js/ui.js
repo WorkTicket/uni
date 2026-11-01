@@ -8,6 +8,7 @@
     const canvas = app.canvas, labelsEl = $("labels"), tip = $("tip");
     const ui = { labels: true, orbits: true, motion: true };
     let lastHud = 0, lastFocus = null, labelPool = [];
+    const keys = {};
 
     // ---- timeline ticks (epoch landmarks) ----
     const ticks = $("tl-ticks");
@@ -73,7 +74,8 @@
       }
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
-        if (drag.btn === 2 || drag.shift) app.look(dx, dy); else app.orbit(dx, dy);
+        if (app.modeOf() === "free" && (drag.btn === 2 || drag.shift)) app.freeLook(dx, dy);
+        else if (drag.btn === 2 || drag.shift) app.look(dx, dy); else app.orbit(dx, dy);
       }
     });
     const up = (e) => {
@@ -87,6 +89,7 @@
     canvas.addEventListener("wheel", (e) => { e.preventDefault(); app.wheel(e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY); }, { passive: false });
     function flyToHover() { const n = app.nodeFromHover(app.hover); if (n) app.flyTo(n); }
     g.addEventListener("keydown", (e) => {
+      keys[e.key] = true;
       if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.key !== "Escape") return;
       switch (e.key) {
         case " ": e.preventDefault(); play.click(); break;
@@ -94,7 +97,10 @@
         case "h": case "H": app.homeView(); break;
         case "Backspace": case "ArrowDown": e.preventDefault(); app.autopilot = null; app.popOut(); break;
         case "ArrowUp": app.wheel(-120); break;
-        case "w": app.wheel(-90); break; case "s": app.wheel(90); break;
+        case "w": case "W": if (app.modeOf() === "free") app.freeMove(0, 0, -1); else app.wheel(-90); break;
+        case "s": case "S": if (app.modeOf() === "free") app.freeMove(0, 0, 1); else app.wheel(90); break;
+        case "a": case "A": if (app.modeOf() === "free") app.freeMove(-1, 0, 0); else app.orbit(-14, 0); break;
+        case "d": case "D": if (app.modeOf() === "free") app.freeMove(1, 0, 0); else startDive(); break;
         case "ArrowLeft": app.orbit(-14, 0); break; case "ArrowRight": app.orbit(14, 0); break;
         case "l": case "L": $("opt-labels").click(); break; case "o": case "O": $("opt-orbits").click(); break;
         case "f": case "F": if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); else document.exitFullscreen(); break;
@@ -110,11 +116,18 @@
       }
     });
     function bumpSpeed(d) { const bs = [...document.querySelectorAll("#speed button")], i = bs.findIndex((b) => b.classList.contains("on")); const n = bs[U.clamp(i + d, 0, bs.length - 1)]; n.click(); }
+    g.addEventListener("keyup", (e) => { keys[e.key] = false; });
     g.addEventListener("resize", () => app.resize());
 
     // ---- per-frame HUD ----
     app.on("update", () => {
       const now = performance.now();
+      // free-flight WASD movement applied every frame
+      if (app.modeOf() === "free") {
+        const vx = (keys["d"] || keys["D"] ? 1 : 0) - (keys["a"] || keys["A"] ? 1 : 0);
+        const vz = (keys["s"] || keys["S"] ? 1 : 0) - (keys["w"] || keys["W"] ? 1 : 0);
+        app.freeMove(vx, 0, vz);
+      }
       // tooltip follows hover every frame
       const h = app.hover;
       if (h && h.label && app.mouse.inside) {

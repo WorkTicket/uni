@@ -239,6 +239,8 @@
       const maxAU = (star.size || 5 * AU);
       for (const b of bodies) {
         if (b.kind === "star") continue;
+        const rel = V.sub(b.pos, camS);
+        if (b.kind === "blackhole") { this.drawBlackHole(ctx, b, rel, camS, fade); continue; }
         const dd = b.node.data, base = b.kind === "planet" ? [0, 0, 0] : bodies.find((x) => x.node === b.parent).pos;
         const dist = V.len(V.sub(b.pos, camS)), dpar = V.len(V.sub(base, camS));
         const near = U.smooth(b.R * 8, b.R * 60, dist);
@@ -315,6 +317,41 @@
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND);
       gl.bindVertexArray(this.vao); gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.disable(gl.SCISSOR_TEST);
+    }
+    // Schwarzschild black hole: event horizon (black sphere), photon sphere ring,
+    // optional accretion disk, weak-lensing background distortion (documented approximation).
+    drawBlackHole(ctx, b, rel, camS, fade) {
+      const gl = this.R.gl, node = b.node, dd = node.data, W = ctx.w, H = ctx.h;
+      const d = V.len(rel);
+      const R = b.R;           // visual size (~1.25 r_s)
+      const rs = dd.rSchwarzschild;
+      const rph = dd.rPhotonSphere;
+      const bcrit = dd.bCritical;
+      const p = this.body.use();
+      const sunRel = V.sub([0, 0, 0], rel), sunDist = V.len(sunRel), sunDir = V.norm(sunRel);
+      const ext = R * 2.6;
+      const vv = [V.dot(ctx.Vrows[0], rel), V.dot(ctx.Vrows[1], rel), V.dot(ctx.Vrows[2], rel)];
+      let x0 = 0, y0 = 0, x1 = W, y1 = H;
+      if (-vv[2] > ext * 1.05) {
+        const w = -vv[2], rp = ext / Math.sqrt(Math.max(1 - (ext / d) * (ext / d), 0.0001));
+        const cx = (vv[0] * ctx.proj[0] / w * 0.5 + 0.5) * W, cy = (vv[1] * ctx.proj[1] / w * 0.5 + 0.5) * H;
+        const rx = rp / w * ctx.proj[0] * 0.5 * W, ry = rp / w * ctx.proj[1] * 0.5 * H;
+        x0 = Math.max(0, Math.floor(cx - rx - 2)); x1 = Math.min(W, Math.ceil(cx + rx + 2));
+        y0 = Math.max(0, Math.floor(cy - ry - 2)); y1 = Math.min(H, Math.ceil(cy + ry + 2));
+        if (x1 <= x0 || y1 <= y0) return;
+      }
+      gl.enable(gl.SCISSOR_TEST); gl.scissor(x0, y0, x1 - x0, y1 - y0);
+      p.m3("uVinv", ctx.Vinv).f2("uProj", ctx.proj[0], ctx.proj[1]).f1("uPxScale", ctx.pxScale)
+        .f3("uC", rel[0], rel[1], rel[2]).f1("uR", R).f1("uTime", ctx.time);
+      p.i1("uType", 2).f1("uSunI", 0).f1("uSeed", (dd.seed % 1000) / 100).f1("uBiome", 0)
+        .v3("uPalA", [0, 0, 0]).v3("uPalB", [0.05, 0.05, 0.08]).v3("uPalC", [0, 0, 0]).v3("uPalD", [0, 0, 0])
+        .v3("uAtmCol", [0, 0, 0]).f3("uStarCol", 0, 0, 0).f1("uStarT", 0);
+      p.f4("uP0", 0, 0, 0, 1).f4("uP1", 0, 0, 0, dd.hasAccretionDisk ? 1 : 0);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND);
+      gl.bindVertexArray(this.vao); gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.disable(gl.SCISSOR_TEST);
+      // photon sphere / critical impact diagnostics (text via HUD is handled by app.describe)
+      // accretion disk would be rendered here as a separate ring when dd.hasAccretionDisk
     }
   }
 

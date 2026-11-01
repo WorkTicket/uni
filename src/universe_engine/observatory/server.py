@@ -95,6 +95,10 @@ def create_app(save_dir="runs/observatory"):
     def research_lab_page():
         return FileResponse(STATIC / "research_lab.html")
 
+    @app.get("/hyperspace")
+    def hyperspace_page():
+        return FileResponse(STATIC / "hyperspace.html")
+
     @app.get("/api/cosmology")
     def cosmology():
         return load_cosmology()
