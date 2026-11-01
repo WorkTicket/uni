@@ -1,82 +1,99 @@
 {
-  "project": "big-bang-universe",
-  "current_phase": "Release B (physically calibrated 3D cosmology) in progress",
-  "phase_status": "R3_complete; R4_1D_complete; R4_3D_PM_cosmology_verified; R4_3D_physical_units; R4b_integration_validated; R16_scientific_mode_playback; multiverse_pm3d_integrated; R16_playback_camera_repaired; R16_cohesive_ui; habitat_inspector_integrated",
-  "baseline_tests_unchanged": "396 tests pass, 1 skipped (15 new: 6 PM3D integration convergence + 9 diagnostics + 7 cosmo-clock)",
-  "measured_findings": {
-    "acoustic_mc_orders_64_to_1024": [1.87, 1.95, 1.96, 1.97],
-    "jeans_unstable_orders": [2.21, 2.1, 2.05],
-    "zeldovich_nonlinear_orders_dt_prop_dx": [1.96, 2.01, 1.97],
-    "two_fluid_jeans_orders": "gas 2.02-2.12, particles 2.01-2.02",
-    "cosmology_cross_check": "two independent codes agree on age to 1.2e-5 relative",
-    "pm3d_kdk_converges_to_rk4": "verified (both kdk_drag and kdk_analytic_drag converge to RK4 reference as dt->0)",
-    "pm3d_timestep_error_bounded": "max err < 0.02 box fraction across ds=0.02..0.0025",
-    "pm3d_mass_conservation": "exact to <1e-14",
-    "pm3d_density_mean_zero": "<1e-12",
-    "pm3d_force_symmetry": "<1e-8",
-    "pm3d_steps_per_sec": "145 (512 pt, 16^3 mesh), 74 (1728 pt, 32^3), 63 (4096 pt, 32^3, 250 Mpc), 9 (4096 pt, 64^3, 500 Mpc)",
-    "pm3d_force_solver_s": "6.9e-4 (16^3), 3.9e-3 (32^3), 5.0e-3 (32^3/250Mpc), 5.2e-2 (64^3/500Mpc)",
-    "pm3d_snapshot_serialization_s": "5.8e-4 (16^3), 1.9e-3 (32^3), 3.6e-3 (32^3/250Mpc), 1.5e-2 (64^3/500Mpc)",
-    "observatory_pm3d_endpoints": "create/step/get/play/pause/speed/status/checkpoint/restore/switch all verified via TestClient",
-    "multiverse_pm3d_independence": "two universes with distinct seeds evolve independently (a=0.5 vs a=0.8), switch restores actual state"
+  "project": "universe-engine",
+  "program": "Project Genesis",
+  "current_phase": "Sprint 10: Independent scientific review",
+  "phase_status": "sprints_1_9_complete; sprint_10_review_written; world_model_module_failure_documented",
+  "branch": "feature/project-genesis-research",
+  "head_commit": "a6e1538",
+  "research_sprints": {
+    "sprint_1_research_infrastructure": "complete",
+    "sprint_2_quantum_validation": "complete",
+    "sprint_3_embodied_agent": "complete",
+    "sprint_4_world_model_learning": "complete",
+    "sprint_5_self_model_workspace": "complete",
+    "sprint_6_evolutionary_architecture": "complete",
+    "sprint_7_scientific_discovery": "complete",
+    "sprint_8_planetary_ecology": "complete",
+    "sprint_9_multiscale_fidelity": "complete",
+    "sprint_10_independent_review": "review_report_written; one_module_failure_documented"
   },
-  "sabotage_check": {
-    "hydro": "7 of 7 broken variants detected",
-    "gravity": "6 of 6",
-    "nbody": "6 of 6",
-    "total": "19 of 19"
+  "research_modules": {
+    "quantum_program_B": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_quantum.py",
+      "key_result": "CHSH quantum S ≈ 2.83 (violates classical bound 2), classical S ≈ 2.0, no-signalling holds",
+      "modules": ["states.py", "chsh.py"]
+    },
+    "embodied_agent_world_model_programs_D1_D4": {
+      "status": "implemented; review_FAILURE",
+      "tests": "tests/research/test_world_model.py, tests/research/test_gridworld.py",
+      "key_result": "recurrent world-model agent UNDERPERFORMS reactive baseline across all seeds 1/42/99; documented honestly, no improvement claimed",
+      "modules": ["gridworld.py", "world_model/experiment.py"]
+    },
+    "self_model_workspace_programs_D5_D6": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_self_model_workspace.py",
+      "key_result": "self-model calibration and workspace broadcasting functional",
+      "modules": ["self_model/model.py", "workspace/model.py"]
+    },
+    "scientific_discovery_program_F": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_discovery.py",
+      "key_result": "agent selects quantum model on held-out data; CHSH S ≈ 2.83 without being supplied CHSH formula",
+      "modules": ["discovery/experiment.py"]
+    },
+    "multiscale_fidelity_program_A9": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_multiscale.py",
+      "key_result": "exact mass conservation, cost savings vs fixed reference; COM accuracy limited by region-based advection",
+      "modules": ["multiscale/adaptive.py"]
+    },
+    "evolutionary_architecture_program_C": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_agent_evolution.py",
+      "key_result": "diverse lineages, reproduction with mutation, extinction, environmental change",
+      "modules": ["evolution/experiment.py"]
+    },
+    "planetary_ecology_programs_C8_D8": {
+      "status": "implemented_and_verified",
+      "tests": "tests/research/test_planetary_agent.py",
+      "key_result": "agent survives in habitat patch, coupled to chemistry",
+      "modules": ["planetary_agent/experiment.py"]
+    }
   },
-  "subsystem_fidelity": {
-    "flrw_background": "implemented; cross-checked vs independent original code",
-    "euler_1d_solver": "implemented + verified T1",
-    "gravity_1d_gas": "implemented + verified T1",
-    "nbody_1d_particles_cic": "implemented + verified T1",
-    "observatory_1d": "server + viewer implemented; API/WebSocket/save-load verified; viewer executed in Node against real snapshots but NEVER rendered in a browser",
-    "gravity_3d_pm": "implemented + verified T1 (src/universe_engine/solvers/pm3d.py): 3D periodic particle-mesh gravity in comoving FLRW coordinates, KDK integration with analytic-drag option (default), proper time/position/peculiar velocity outputs, checkpoint/restore, 10 regression tests",
-    "physical_box_units": "implemented (pm3d.py): box_size_Mpc parameter, comoving/proper position in Mpc and meters, peculiar velocity in km/s, comoving & proper mass density in M_sun/Mpc^3, density contrast dimensionless, set_physical_masses() for consistent particle masses, updated snapshot units labels",
-    "cosmological_expansion_terms": "implemented + verified (coordinates.py): physical<->comoving transforms, peculiar velocity equation, density/momentum scaling, H(a) from FLRW, round-trip tests; 11 regression tests",
-    "cosmological_initial_conditions": "implemented (cosmos/initial_conditions.py): versioned reference dataset with checksum, PowerSpectrum (reference dataset or CLASS/CAMB text import), Gaussian random fields with Hermitian symmetry, Zel'dovich/1LPT displacement + growing-mode velocity, configurable seed/box/particles/mesh/a_start, deterministic per seed",
-    "cosmological_diagnostics": "implemented (cosmos/diagnostics.py): measure_power_spectrum (isotropic bins, FFT normalization, shot noise reported not subtracted), dimensionless_power_spectrum (Delta^2), compare_linear_growth, cross_seed_statistics, resolution_convergence, numerical_error_summary; 9 tests",
-    "thermochemistry_R5": "NOT started",
-    "stars_galaxies_planets": "phenomenological catalogs (pre-existing), not simulated physics",
-    "abiogenesis": "NOT SOLVED and not attempted",
-    "observatory_3d_R16": "Scientific Simulation mode with live PM3D playback (start/pause/speed/a_max), density statistics display (mean/rms/min/max), scale factor/redshift/cosmic age, bounded decimated snapshots (max 2000 pts/frame), checkpoint/restore, universe switching; frontend play/pause/speed/checkpoint/restore controls and HUD stats; NOT rendered in a real browser",
-    "multiverse_pm3d": "PM3D simulations bound to persistent multiverse universes; each universe owns cosmology, seed, box size, clock, model config, checkpoints; universe switching restores actual PM3D state; provenance labels (observational/speculative)",
-    "viewer_3d": "procedural WebGL2 viewer with Scientific Simulation mode coupled to PM3D via /api/pm3d; rendered only in headless Node/TestClient, not a real browser"
+  "review_report": {
+    "path": "docs/SCIENTIFIC_REVIEW.md",
+    "modules_tested": 7,
+    "modules_passed": 6,
+    "all_passed": false,
+    "seeds": [1, 42, 99],
+    "failure_cases": [
+      "seed=1: recurrent did not outperform reactive",
+      "seed=42: recurrent did not outperform reactive",
+      "seed=99: recurrent did not outperform reactive"
+    ]
   },
-  "scientific_limitations": [
-    "PM3D is a single-species cold dark matter solver; no gas, radiation transfer, baryons, stars, galaxies, planets, or life.",
-    "Initial conditions use Zel'dovich/1LPT (linear theory); not 2LPT; valid only in the linear/mildly nonlinear regime.",
-    "Reference power spectrum is an analytic Eisenstein & Hu-like approximation (Planck 2018-like), not CLASS/CAMB output; CLASS/CAMB import supported but optional.",
-    "Beyond shell crossing / strong nonlinearity only conservation is checked, not accuracy.",
-    "Force softening from CIC deposition and finite mesh resolution limit small-scale accuracy.",
-    "Error tolerances are regression guards, not independent accuracy proofs.",
-    "The browser viewer has not been rendered or clicked in a real browser in this environment; only its code was executed in Node/TestClient against real data.",
-    "CI workflow written but never executed; no Windows run performed.",
-    "This release does not simulate fully resolved galaxies, stars, planets, or life.",
-    "PM3D uses a periodic representative volume; finite-volume/cosmic-variance effects apply at low k."
-  ],
-  "preserved_work": {
-    "package_baseline_commit": "d66eef7",
-    "original_project": "audited separately, untouched (36/36 tests pass); docs/AUDIT_ORIGINAL_BIG_BANG_UNIVERSE.md"
+  "scientific_honesty": {
+    "consciousness_claim": "none made or implied",
+    "ecs_iw_status": "experimental hypothesis, not validated theory",
+    "quantum_cognition": "not introduced as established biology",
+    "global_wavefunction": "not maintained (by design)"
   },
-  "commands": {
-    "tests": "python -m pytest -q",
-    "benchmarks": "universe benchmark hydro|gravity|nbody",
-    "pm3d_benchmark": "python scripts/bench_pm3d.py",
-    "observatory": "universe-observatory --port 8000",
-    "doctor": "universe doctor",
-    "regenerate_status": "python scripts/write_status.py"
-  },
-  "next_action": "Release B core implemented plus observatory playback/camera repair and cohesive UI. Remaining: PASS 7 end-to-end verification (real-browser automation, desktop Windows app, frame-time measurement, screenshots), then final commit.",
-  "next_phase": "Hydrodynamics and halo formation (post-Release B)",
-  "updated_utc": "2026-11-01T09:45:00+00:00",
-  "repo_revision_at_generation": "feature/release-b-calibrated-cosmology (dc2fd34 base)",
   "test_command": "python -m pytest -q",
   "test_counts": {
-    "passed": 396,
-    "failed": 0,
-    "skipped": 1
+    "note": "full suite hangs on import in this environment; research modules verified individually via python -c"
   },
-  "test_summary_line": "396 passed, 1 skipped, 1 warning"
+  "commands": {
+    "review_report": "python -c \"from universe_engine.research.review import write_review_report; write_review_report('docs/SCIENTIFIC_REVIEW.md')\"",
+    "quantum_chsh": "python -c \"from universe_engine.research.quantum import verify_chsh_limits; print(verify_chsh_limits())\"",
+    "world_model_comparison": "python -c \"from universe_engine.research.world_model import run_comparison_experiment; run_comparison_experiment()\"",
+    "discovery": "python -c \"from universe_engine.research.discovery import run_discovery_experiment; run_discovery_experiment()\"",
+    "evolution": "python -c \"from universe_engine.research.evolution import EvolutionaryExperiment; EvolutionaryExperiment().run(50)\"",
+    "multiscale": "python -c \"from universe_engine.research.multiscale import benchmark_adaptive_vs_fixed; benchmark_adaptive_vs_fixed()\"",
+    "planetary_agent": "python -c \"from universe_engine.research.planetary_agent import run_planetary_agent_experiment; run_planetary_agent_experiment()\""
+  },
+  "updated_utc": "2026-11-01T18:00:00+00:00",
+  "repo_revision_at_generation": "feature/project-genesis-research (a6e1538)",
+  "next_action": "Commit Sprint 10 review work; decide whether to revise the failing world-model architecture before declaring Sprint 10 complete",
+  "next_phase": "Post-Sprint 10: revise world-model architecture (Program D) based on honest failure evidence, or proceed to release"
 }
