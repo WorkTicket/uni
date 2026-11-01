@@ -8,6 +8,7 @@
     low:    { N: 64,  keep: 1,    stars: 120000,  scale: 0.75, maxHalos: 9000 },
     medium: { N: 128, keep: 0.25, stars: 240000, scale: 1.0,  maxHalos: 22000 },
     high:   { N: 128, keep: 0.7,  stars: 420000, scale: 1.0,  maxHalos: 30000 },
+    ultra:  { N: 256, keep: 1.0,  stars: 700000, scale: 1.25, maxHalos: 45000 },
   };
   const TOTAL_SECONDS = 96;       // default length of "Big Bang -> today" at 1x
 
@@ -18,15 +19,18 @@
       this.R = { gl }; this.post = new U.GL.Post(gl); this.post.fmt = hdr ? "hdr" : "ldr";
       this.web = new U.Layers.WebLayer(this.R); this.sprites = new U.Layers.GalaxySprites(this.R);
       this.stars = new U.Layers.GalaxyStars(this.R); this.system = new U.Layers.SystemLayer(this.R);
+      this.chem = new U.Layers.ChemicalFieldLayer(this.R);
       this.quality = this.opts.quality || "medium";       this.seed = 1; this.uni = null;
       this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.stopAtNow = false; this.reachedNow = false;
       this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
       this.node = null; this.pos = [0, 0, 0]; this.q = Q.ident(); this.zoomAcc = 0; this.recenter = 0;
       this.mouse = { x: 0.5, y: 0.5, inside: false }; this.hover = null; this.lastPick = 0;
       this.exposure = 1; this.bloom = 0.38; this.autopilot = null; this.listeners = {};
-      this.camMode = "orbit";        // orbit | follow | surface | free
+      this.camMode = "orbit";        // orbit | follow | surface | free | micro
       this.followTarget = null;      // {node, t} for follow/surface tracking
       this.followDist = 0;           // metres from target centre
+      this.simEnvs = null;           // planet index -> {liqW, atmOk} from the habitat simulation
+      this.micro = false;            // microscopic/chemical-field view mode
       this.resize();
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
@@ -122,6 +126,8 @@
     surface(node) { this.camMode = "surface"; this.followTarget = { node, t: this.t }; const lim = this.limits(node); this.followDist = lim.min * 1.15; this.recenter = 1.0; }
     orbitMode() { this.camMode = "orbit"; this.followTarget = null; }
     freeMode() { this.camMode = "free"; this.followTarget = null; }
+    microMode(on) { this.micro = !!on; }
+    setSimEnvs(envs) { this.simEnvs = envs || null; this.emit("sim-envs", envs); }
     modeOf() { return this.camMode; }
 
     // ---- camera transitions (spec: resolve position -> bounding radius -> framing distance -> interpolate) ----
@@ -371,10 +377,10 @@
         if (s.mass[i] < 0.7 || s.mass[i] > 1.4 || rad < 0.3 * R || rad > 0.6 * R || Math.abs(s.pos[i * 3 + 1]) > 0.5) continue;
         if (tG - s.attr[i * 4 + 2] < 2 || tG - s.attr[i * 4 + 2] > s.attr[i * 4 + 3]) continue;
         const spec = { pos: [s.pos[i * 3], s.pos[i * 3 + 1], s.pos[i * 3 + 2]], M: s.mass[i], tb: s.attr[i * 4 + 2], id: U.hash2(gal.data.seed, i + 1) };
-        const n = U.makeStarNode(gal, spec); n.cloudIdx = i; const pl = U.makeSystem(n);
+        const n = U.makeStarNode(gal, spec); n.cloudIdx = i; const pl = U.makeSystem(n, this.simEnvs);
         if (pl.length >= 3 && pl.some((p) => /ocean|temperate|desert|cold/.test(p.data.biome)) && pl.some((p) => p.data.hasRings || p.data.biome === "gas")) star = n;
       }
-      if (!star) { const i = 0; const spec = { pos: [s.pos[0], s.pos[1], s.pos[2]], M: s.mass[0], tb: s.attr[2], id: 77 }; star = U.makeStarNode(gal, spec); star.cloudIdx = 0; U.makeSystem(star); }
+      if (!star) { const i = 0; const spec = { pos: [s.pos[0], s.pos[1], s.pos[2]], M: s.mass[0], tb: s.attr[2], id: 77 }; star = U.makeStarNode(gal, spec); star.cloudIdx = 0; U.makeSystem(star, this.simEnvs); }
       const planets = star.children.filter((p) => !p.data.moon);
       const hab = planets.find((p) => /ocean|temperate/.test(p.data.biome)) || planets.find((p) => /desert|cold/.test(p.data.biome)) || planets[0];
       const giant = planets.find((p) => p.data.biome === "gas" || p.data.biome === "icegiant");
@@ -448,6 +454,10 @@
         const S = chain[iS], tG = t / U.GYR, alive = tG >= S.data.tb && tG < S.data.tb + S.data.life;
         const fade = alive ? 1 : 0;
         this.system.draw(ctx, { star: S, camStar: cams[iS], t: this.t, spinClk: this.spinClk }, { fade, orbits: this.orbits !== false });
+        // microscopic / chemical-field overlay on the focused liquid-water planet
+        if (this.micro && this.node.kind === "planet" && fade > 0.002) {
+          this.chem.draw(ctx, this.node, { fade: 1 });
+        }
       }
       // --- post
       const k = this.node.kind, tgt = (k === "planet" || k === "moon") ? [0.16, 1.0] : k === "star" ? [0.24, 1.0] : k === "galaxy" ? [0.5, 1.0] : [0.4, 1.0];
@@ -478,7 +488,12 @@
         case "halo": rows.push(["Type", d.groupName], ["Mass", U.fmtSci(Math.pow(10, d.logM), "M☉")], ["Virial radius", U.fmtDist(d.rvir)], ["Member galaxies", String(d.members)]); break;
         case "galaxy": rows.push(["Type", U.GALAXY_KINDS[d.kind] + " galaxy"], ["Halo mass", U.fmtSci(Math.pow(10, d.logM + 0.6), "M☉")], ["Radius", U.fmtDist(n.size)], ["Formed", U.fmtTime(d.tForm)], ["Spiral arms", d.kind < 2 ? String(d.arms) : "-"]); break;
         case "star": rows.push(["Spectral class", d.cls], ["Mass", d.M.toFixed(2) + " M☉"], ["Luminosity", d.L < 100 ? d.L.toFixed(2) + " L☉" : U.fmtSci(d.L, "L☉")], ["Temperature", d.T.toFixed(0) + " K"], ["Radius", (d.R / U.RSUN).toFixed(2) + " R☉"], ["Age", d.age.toFixed(2) + " Gyr"], ["Planets", String((n.children || []).filter((p) => !p.data.moon).length)]); break;
-        case "planet": case "moon": rows.push(["Class", d.cls], ["Radius", (d.R / U.REARTH).toFixed(2) + " R⊕"], ["Mass", U.fmtMass(d.Mass)], ["Orbit", n.kind === "planet" ? (d.a / AU).toFixed(2) + " AU · " + (d.P / YEAR).toFixed(2) + " yr" : U.fmtDist(d.a) + " · " + (d.P / 86400).toFixed(1) + " d"], ["Equilibrium temp", d.Teq.toFixed(0) + " K"], ["Moons", String((n.children || []).length)]); break;
+        case "planet": case "moon": {
+          const simRows = [];
+          if (d.simLiqW !== undefined) simRows.push(["Liquid water", (d.simLiqW * 100).toFixed(0) + "%"]);
+          if (d.simAtm !== undefined) simRows.push(["Atmosphere", d.simAtm > 0 ? "supported" : "none"]);
+          rows.push(["Class", d.cls], ["Radius", (d.R / U.REARTH).toFixed(2) + " R⊕"], ["Mass", U.fmtMass(d.Mass)], ["Orbit", n.kind === "planet" ? (d.a / AU).toFixed(2) + " AU · " + (d.P / YEAR).toFixed(2) + " yr" : U.fmtDist(d.a) + " · " + (d.P / 86400).toFixed(1) + " d"], ["Equilibrium temp", d.Teq.toFixed(0) + " K"], ["Moons", String((n.children || []).length)], ...simRows);
+        } break;
       }
       return rows;
     }

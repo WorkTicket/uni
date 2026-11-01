@@ -226,3 +226,85 @@ def test_warning_appears_only_when_leaving_the_verified_regime(client):
     assert client.post("/api/step", json={"n": 5}).json()["warnings"] == []
     assert client.post("/api/step", json={"n": 400}).json()["warnings"]      # deep nonlinear collapse
     assert "beyond the verified benchmarks" in client.get("/api/state").json()["warnings"][0]
+
+
+# ---- research laboratory ----
+def test_lab_create_and_list(client):
+    r = client.post("/api/lab", json={"name": "Evo-1", "seed": 7, "config": {"n_founders": 10, "n_patches": 4}})
+    assert r.status_code == 200, r.text
+    exp = r.json()["experiment"]
+    assert exp["name"] == "Evo-1" and exp["status"] == "created" and exp["steps"] == 0
+    data = client.get("/api/lab").json()
+    assert any(e["id"] == exp["id"] for e in data["experiments"])
+
+
+def test_lab_step_advances_population(client):
+    r = client.post("/api/lab", json={"name": "Evo-2", "seed": 3, "config": {"n_founders": 12, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    s = client.post(f"/api/lab/{eid}/step", json={"n": 5}).json()
+    assert s["experiment"]["steps"] == 5
+    st = client.get(f"/api/lab/{eid}/stats").json()
+    assert st["n_organisms"] >= 0 and st["steps"] == 5
+
+
+def test_lab_run_and_pause(client):
+    r = client.post("/api/lab", json={"name": "Evo-3", "seed": 5, "config": {"n_founders": 8, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    client.post(f"/api/lab/{eid}/run", json={"max_steps": 6})
+    st = client.get(f"/api/lab/{eid}/stats").json()
+    assert st["steps"] == 6 and st["status"] == "finished"
+    client.post(f"/api/lab/{eid}/pause")
+    assert client.get(f"/api/lab/{eid}/stats").json()["status"] == "paused"
+
+
+def test_lab_trajectory_and_history(client):
+    r = client.post("/api/lab", json={"name": "Evo-4", "seed": 9, "config": {"n_founders": 6, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    client.post(f"/api/lab/{eid}/step", json={"n": 4})
+    traj = client.get(f"/api/lab/{eid}/trajectory").json()
+    assert len(traj["t"]) >= 1 and len(traj["organisms"]) == len(traj["t"])
+    hist = client.get(f"/api/lab/{eid}/history").json()
+    assert len(hist["history"]) >= 1
+
+
+def test_lab_sterile_world_stays_sterile(client):
+    # Zero founders -> no organisms ever appear
+    r = client.post("/api/lab", json={"name": "Sterile", "seed": 1, "config": {"n_founders": 0, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    client.post(f"/api/lab/{eid}/step", json={"n": 10})
+    st = client.get(f"/api/lab/{eid}/stats").json()
+    assert st["n_organisms"] == 0 and st["sterile"] is True
+
+
+def test_lab_checkpoint_and_restore(client):
+    r = client.post("/api/lab", json={"name": "Evo-5", "seed": 2, "config": {"n_founders": 10, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    client.post(f"/api/lab/{eid}/step", json={"n": 3})
+    cp = client.post(f"/api/lab/{eid}/checkpoint").json()
+    assert "world" in cp and "experiment" in cp
+    # advance more, then restore
+    client.post(f"/api/lab/{eid}/step", json={"n": 3})
+    after = client.get(f"/api/lab/{eid}/stats").json()
+    assert after["steps"] == 6
+    restored = client.post(f"/api/lab/{eid}/restore", json=cp).json()
+    assert restored["experiment"]["steps"] == 3
+
+
+def test_lab_lineage_and_extinctions(client):
+    r = client.post("/api/lab", json={"name": "Evo-6", "seed": 4, "config": {"n_founders": 8, "dt_gyr": 1e-4}})
+    eid = r.json()["experiment"]["id"]
+    client.post(f"/api/lab/{eid}/step", json={"n": 5})
+    lin = client.get(f"/api/lab/{eid}/lineage").json()
+    assert "n_lineages" in lin
+    ex = client.get(f"/api/lab/{eid}/extinctions").json()
+    assert "extinctions" in ex
+
+
+def test_lab_bad_id_rejected(client):
+    assert client.post("/api/lab/../etc/passwd/step", json={"n": 1}).status_code in (404, 422)
+    assert client.get("/api/lab/nonexistent-id/stats").status_code in (404, 422)
+
+
+def test_research_lab_page_served(client):
+    r = client.get("/research-lab")
+    assert r.status_code == 200 and "<canvas" in r.text

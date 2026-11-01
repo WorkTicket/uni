@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Research Laboratory — Universe Engine</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  #lab-shell { display: grid; grid-template-columns: 340px 1fr; gap: 12px; padding: 12px 16px; height: calc(100vh - 44px); overflow: hidden; }
+  @media (max-width: 900px) { #lab-shell { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow: auto; }
+  h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.06em; }
+  label { display: block; margin: 6px 0 2px; color: var(--muted-foreground); font-size: 12px; }
+  input, select, button { width: 100%; box-sizing: border-box; padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--input); color: var(--foreground); }
+  button { cursor: pointer; margin-top: 6px; }
+  button.p { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  button.secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  button.danger { background: var(--destructive); color: var(--destructive-foreground); border-color: var(--destructive); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; margin-top: 8px; }
+  .row > * { flex: 1; width: auto; }
+  .small { font-size: 11px; color: var(--muted-foreground); margin-top: 4px; }
+  #msg { color: var(--destructive); font-size: 12px; min-height: 1.4em; }
+  #ok { color: var(--success); font-size: 12px; min-height: 1.4em; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-size: 13px; }
+  dt { color: var(--muted-foreground); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  canvas { width: 100%; height: 300px; background: var(--background); border: 1px solid var(--border); border-radius: 6px; display: block; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted-foreground); }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 10px; background: var(--muted); color: var(--muted-foreground); margin-right: 4px; }
+  .badge.running { background: var(--primary); color: var(--primary-foreground); }
+  .badge.paused { background: var(--warning); color: var(--warning-foreground); }
+  .badge.finished { background: var(--secondary); color: var(--secondary-foreground); }
+  .badge.error { background: var(--destructive); color: var(--destructive-foreground); }
+  .hide { display: none; }
+  #plot-area { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+  #exp-list { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+  .exp-item { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--background); }
+  .exp-item.selected { border-color: var(--ring); background: var(--accent); }
+  .exp-item .name { font-weight: 600; }
+  .exp-item .meta { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+  .btn-compact { padding: 2px 8px; font-size: 11px; margin: 4px 4px 0 0; width: auto; }
+</style>
+</head>
+<body>
+<header class="glass" style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+  <span style="font-weight:700">Research Laboratory</span>
+  <span style="font-size:12px;color:var(--muted-foreground)">Evolution experiments &bull; population trajectories &bull; lineage &bull; extinction</span>
+  <div style="margin-left:auto"></div>
+  <button class="pill secondary" onclick="location='/'">&#8592; Universe view</button>
+</header>
+<div id="lab-shell">
+  <aside id="lab-sidebar">
+    <div class="card">
+      <h2>Create experiment</h2>
+      <label>Name</label><input id="r-name" value="Evolution run">
+      <label>Seed</label><input id="r-seed" type="number" value="42">
+      <label>Founders</label><input id="r-founders" type="number" value="20">
+      <label>Nutrient per patch (mol)</label><input id="r-nutrient" type="number" step="0.1" value="10">
+      <label>dt (Gyr per step)</label><input id="r-dt" type="number" step="1e-6" value="0.0001">
+      <label>Patches</label><input id="r-patches" type="number" value="8">
+      <button class="p" id="r-create">Create experiment</button>
+      <div id="r-msg"></div>
+    </div>
+    <div class="card">
+      <h2>Experiments</h2>
+      <div id="exp-list"></div>
+    </div>
+  </aside>
+  <main id="lab-main" class="card">
+    <h2 id="view-name">Select an experiment</h2>
+    <div id="view-controls" class="hide">
+      <div class="row">
+        <button class="btn-compact secondary" id="r-step">Step x10</button>
+        <button class="btn-compact p" id="r-run">Run</button>
+        <button class="btn-compact secondary" id="r-pause">Pause</button>
+        <button class="btn-compact danger" id="r-delete">Delete</button>
+        <button class="btn-compact secondary" id="r-checkpoint">Checkpoint</button>
+        <button class="btn-compact secondary" id="r-export">Export JSON</button>
+      </div>
+      <div id="r-status" class="small" style="margin-top:6px"></div>
+    </div>
+    <div id="view-stats" class="hide">
+      <h2>Status</h2>
+      <dl id="stats-dl"></dl>
+    </div>
+    <div id="view-plot" class="hide">
+      <h2>Population trajectory</h2>
+      <canvas id="traj" width="760" height="260"></canvas>
+      <div class="row" style="margin-top:4px">
+        <button class="btn-compact secondary" onclick="trajSeries('organisms')">Organisms</button>
+        <button class="btn-compact secondary" onclick="trajSeries('species')">Species</button>
+        <button class="btn-compact secondary" onclick="trajSeries('lineages')">Lineages</button>
+        <button class="btn-compact secondary" onclick="trajSeries('births')">Births</button>
+        <button class="btn-compact secondary" onclick="trajSeries('deaths')">Deaths</button>
+        <button class="btn-compact secondary" onclick="trajSeries('resource_pool')">Resource pool</button>
+      </div>
+    </div>
+    <div id="view-history" class="hide">
+      <h2>Run history</h2>
+      <div id="history-list" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px"></div>
+    </div>
+    <div id="view-extinctions" class="hide">
+      <h2>Extinction events</h2>
+      <div id="extinction-list"></div>
+    </div>
+    <div id="view-lineage" class="hide">
+      <h2>Lineage</h2>
+      <div id="lineage-out" style="white-space:pre;font:12px ui-monospace,monospace;background:var(--muted);border-radius:6px;padding:8px;max-height:400px;overflow:auto"></div>
+    </div>
+  </main>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let current = null;
+let experimentsById = {};
+let trajSeriesName = "organisms";
+function say(el, text, kind) { const e = $(el); e.textContent = text; e.hidden = !text; e.className = kind === "ok" ? "ok" : (kind === "err" ? "destructive" : ""); }
+async function api(path, method, body) {
+  const opt = { method: method || "GET", headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const res = await fetch(path, opt);
+  let data;
+  try { data = await res.json(); } catch { data = {}; }
+  if (!res.ok) throw new Error((data && data.error) || data.detail || res.statusText);
+  return data;
+}
+async function guard(fn) { try { await fn(); say("r-msg", ""); } catch (e) { say("r-msg", String(e.message || e), "err"); } }
+async function loadList() {
+  const data = await api("/api/lab");
+  experimentsById = {};
+  for (const e of data.experiments) experimentsById[e.id] = e;
+  const list = $("exp-list");
+  list.innerHTML = "";
+  for (const e of data.experiments) {
+    const it = document.createElement("div");
+    it.className = "exp-item" + (current && current.id === e.id ? " selected" : "");
+    it.innerHTML = `<div class="name">${escapeHtml(e.name)} <span class="badge ${e.status}">${e.status}</span></div>
+      <div class="meta">seed ${e.config.seed} &bull; founders ${e.config.n_founders} &bull; steps ${e.steps} &bull; t = ${e.t_gyr.toExponential(2)} Gyr</div>`;
+    it.onclick = () => { current = e; selectExperiment(e.id); };
+    list.appendChild(it);
+  }
+}
+function dataById(eid) { return experimentsById[eid] || null; }
+async function refresh() {
+  if (!current) return;
+  try {
+    const st = await api(`/api/lab/${current.id}/stats`);
+    current = { ...current, ...st, status: st.status, steps: st.steps, t_gyr: st.t_gyr };
+    const dl = $("stats-dl"); dl.innerHTML = "";
+    const rows = [
+      ["Status", current.status],
+      ["Time (Gyr)", current.t_gyr.toExponential(3)],
+      ["Steps", String(current.steps)],
+      ["Organisms", String(current.n_organisms)],
+      ["Species", String(current.n_species)],
+      ["Lineages", String(current.n_lineages)],
+      ["Resource pool", current.resource_pool.toExponential(3)],
+      ["Births", String(current.births)],
+      ["Deaths", String(current.deaths)],
+      ["Sterile", String(current.sterile)],
+    ];
+    for (const [k, v] of rows) { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.appendChild(dt); dl.appendChild(dd); }
+    $("view-stats").classList.remove("hide");
+    $("view-plot").classList.remove("hide");
+    $("view-history").classList.remove("hide");
+    $("view-extinctions").classList.remove("hide");
+    $("view-lineage").classList.remove("hide");
+    drawTraj();
+    drawHistory();
+    drawExtinctions();
+    drawLineage();
+  } catch (e) { console.error(e); }
+}
+async function createExperiment() {
+  const config = {
+    n_founders: parseInt($("r-founders").value, 10),
+    nutrient_per_patch_mol: parseFloat($("r-nutrient").value),
+    dt_gyr: parseFloat($("r-dt").value),
+    n_patches: parseInt($("r-patches").value, 10),
+  };
+  const rec = await api("/api/lab", "POST", { name: $("r-name").value || "Experiment", seed: parseInt($("r-seed").value, 10) || undefined, config });
+  current = rec.experiment;
+  selectExperiment(current.id);
+  say("r-msg", "created " + current.name, "ok");
+}
+async function stepExperiment() {
+  if (!current) return;
+  const r = await api(`/api/lab/${current.id}/step`, "POST", { n: 10 });
+  current = r.experiment;
+  refresh();
+  say("r-msg", "stepped 10", "ok");
+}
+async function runExperiment() {
+  if (!current) return;
+  const r = await api(`/api/lab/${current.id}/run`, "POST", {});
+  current = r.experiment;
+  refresh();
+  say("r-msg", "ran " + r.steps + " steps", "ok");
+}
+async function pauseExperiment() {
+  if (!current) return;
+  await api(`/api/lab/${current.id}/pause`, "POST");
+  refresh();
+}
+async function deleteExperiment() {
+  if (!current || !confirm("Delete experiment \"" + current.name + "\"?")) return;
+  await api(`/api/lab/${current.id}`, "DELETE");
+  current = null;
+  $("view-controls").classList.add("hide");
+  $("view-stats").classList.add("hide");
+  $("view-plot").classList.add("hide");
+  $("view-history").classList.add("hide");
+  $("view-extinctions").classList.add("hide");
+  $("view-lineage").classList.add("hide");
+  $("view-name").textContent = "Select an experiment";
+  loadList();
+}
+async function checkpointExperiment() {
+  if (!current) return;
+  await api(`/api/lab/${current.id}/checkpoint`, "POST");
+  say("r-msg", "checkpoint saved", "ok");
+}
+async function exportExperiment() {
+  if (!current) return;
+  const st = await api(`/api/lab/${current.id}/stats`);
+  const hist = await api(`/api/lab/${current.id}/history`);
+  const traj = await api(`/api/lab/${current.id}/trajectory`);
+  const blob = new Blob([JSON.stringify({ experiment: current, stats: st, history: hist.history, trajectory: traj }, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = current.name.replace(/\s+/g, "_") + ".json"; a.click();
+  URL.revokeObjectURL(url);
+}
+async function drawHistory() {
+  if (!current) return;
+  const hist = await api(`/api/lab/${current.id}/history`);
+  const el = $("history-list"); el.innerHTML = "";
+  for (const h of hist.history.slice(-50)) {
+    const d = document.createElement("div");
+    d.textContent = `t=${h.t_gyr.toExponential(2)} Gyr  org=${h.n_organisms}  sp=${h.n_species}  lin=${h.n_lineages}  births=${h.births}  deaths=${h.deaths}  pool=${h.resource_pool.toExponential(2)}`;
+    el.appendChild(d);
+  }
+}
+async function drawExtinctions() {
+  if (!current) return;
+  const ex = await api(`/api/lab/${current.id}/extinctions`);
+  const el = $("extinction-list"); el.innerHTML = "";
+  if (ex.extinctions.length === 0) { el.textContent = "No extinction events recorded."; return; }
+  for (const e of ex.extinctions) {
+    const d = document.createElement("div");
+    d.textContent = `t=${e.t_gyr.toExponential(2)} Gyr  organisms=${e.n_organisms}  sterile=${e.sterile}`;
+    el.appendChild(d);
+  }
+}
+async function drawLineage() {
+  if (!current) return;
+  const lin = await api(`/api/lab/${current.id}/lineage`);
+  $("lineage-out").textContent = JSON.stringify(lin.lineage, null, 1) || "No lineage data.";
+}
+function drawTraj() {
+  if (!current) return;
+  const c = $("traj"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  api(`/api/lab/${current.id}/trajectory`).then(data => {
+    const ts = data[trajSeriesName];
+    if (!ts || ts.length < 2) { ctx.fillStyle = "#888"; ctx.fillText("no data", 10, 20); return; }
+    const xs = data.t;
+    const x0 = xs[0], x1 = xs[xs.length - 1];
+    let y0 = Infinity, y1 = -Infinity;
+    for (const v of ts) { if (v < y0) y0 = v; if (v > y1) y1 = v; }
+    if (y1 === y0) y1 = y0 + 1;
+    const pad = (y1 - y0) * 0.05 + 1e-12;
+    y0 -= pad; y1 += pad;
+    ctx.strokeStyle = "#58a6ff"; ctx.beginPath();
+    for (let i = 0; i < ts.length; i++) {
+      const px = (xs[i] - x0) / Math.max(x1 - x0, 1e-12) * (c.width - 8) + 4;
+      const py = c.height - 4 - (ts[i] - y0) / (y1 - y0) * (c.height - 8);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#888"; ctx.font = "11px ui-monospace";
+    ctx.fillText(trajSeriesName + "  range [" + y0.toExponential(2) + ", " + y1.toExponential(2) + "]", 6, 12);
+  }).catch(e => console.error(e));
+}
+function trajSeries(name) { trajSeriesName = name; drawTraj(); }
+function escapeHtml(t) { return String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c]); }
+$("r-create").onclick = () => guard(createExperiment);
+$("r-step").onclick = () => guard(stepExperiment);
+$("r-run").onclick = () => guard(runExperiment);
+$("r-pause").onclick = () => guard(pauseExperiment);
+$("r-delete").onclick = () => guard(deleteExperiment);
+$("r-checkpoint").onclick = () => guard(checkpointExperiment);
+$("r-export").onclick = () => guard(exportExperiment);
+loadList().then(() => { setInterval(() => { if (current) refresh(); }, 1500); });
+</script>
+</body>
+</html>

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .session import PRESETS, ParamError, Session
 from ..multiverse import MultiverseManager, MultiverseError
+from .research_lab import ResearchLab, ResearchLabError
 
 STATIC = Path(__file__).parent / "static"
 MAX_STEPS_PER_REQUEST = 10_000
@@ -43,7 +44,8 @@ def create_app(save_dir="runs/observatory"):
     app = FastAPI(title="Universe Observatory", version="0.1")
     holder = {"session": Session("zeldovich")}
     save_root = Path(save_dir)
-    multiverse = MultiverseManager(save_dir.parent / "multiverse")
+    multiverse = MultiverseManager(save_root.parent / "multiverse")
+    research_lab = ResearchLab(save_root.parent / "research_lab")
 
     @app.exception_handler(ParamError)
     async def _param_error(request, exc):
@@ -57,6 +59,10 @@ def create_app(save_dir="runs/observatory"):
     async def _multiverse_error(request, exc):
         return JSONResponse({"error": str(exc)}, status_code=422)
 
+    @app.exception_handler(ResearchLabError)
+    async def _research_lab_error(request, exc):
+        return JSONResponse({"error": str(exc)}, status_code=422)
+
     def ses():
         return holder["session"]
 
@@ -67,6 +73,10 @@ def create_app(save_dir="runs/observatory"):
     @app.get("/lab")
     def lab():
         return FileResponse(STATIC / "lab.html")
+
+    @app.get("/research-lab")
+    def research_lab_page():
+        return FileResponse(STATIC / "research_lab.html")
 
     @app.get("/api/cosmology")
     def cosmology():
@@ -199,6 +209,100 @@ def create_app(save_dir="runs/observatory"):
             raise ParamError("invalid universe id")
         rec = multiverse.branch(uid, body.get("name", f"branch of {uid}"), body.get("from_checkpoint"), body.get("seed"))
         return {"universe": rec.to_dict(), "provenance": rec.provenance}
+
+    # ---- research laboratory ----
+    EXPERIMENT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+    @app.get("/api/lab")
+    def lab_list():
+        return {"experiments": [r.to_dict() for r in research_lab.list_experiments()]}
+
+    @app.post("/api/lab")
+    def lab_create(body: dict = Body(default={})):
+        name = body.get("name", "")
+        config = body.get("config")
+        seed = body.get("seed")
+        rec = research_lab.create_experiment(name=name, config=config, seed=seed)
+        return {"experiment": rec.to_dict()}
+
+    @app.get("/api/lab/{eid}")
+    def lab_get(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        rec = research_lab.get(eid)
+        return {"experiment": rec.to_dict()}
+
+    @app.delete("/api/lab/{eid}")
+    def lab_delete(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        research_lab.delete(eid)
+        return {"ok": True}
+
+    @app.post("/api/lab/{eid}/step")
+    def lab_step(eid: str, body: dict = Body(default={})):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        n = body.get("n", 1)
+        dt_gyr = body.get("dt_gyr")
+        return research_lab.step(eid, n=int(n), dt_gyr=float(dt_gyr) if dt_gyr is not None else None)
+
+    @app.post("/api/lab/{eid}/run")
+    def lab_run(eid: str, body: dict = Body(default={})):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        max_steps = body.get("max_steps")
+        dt_gyr = body.get("dt_gyr")
+        return research_lab.run(eid, max_steps=int(max_steps) if max_steps is not None else None,
+                                dt_gyr=float(dt_gyr) if dt_gyr is not None else None)
+
+    @app.post("/api/lab/{eid}/pause")
+    def lab_pause(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return {"experiment": research_lab.pause(eid).to_dict()}
+
+    @app.get("/api/lab/{eid}/stats")
+    def lab_stats(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return research_lab.stats(eid)
+
+    @app.get("/api/lab/{eid}/history")
+    def lab_history(eid: str, limit: int = 0):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return {"history": research_lab.history(eid, limit=limit or None)}
+
+    @app.get("/api/lab/{eid}/trajectory")
+    def lab_trajectory(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return research_lab.trajectory(eid)
+
+    @app.get("/api/lab/{eid}/lineage")
+    def lab_lineage(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return research_lab.lineage(eid)
+
+    @app.get("/api/lab/{eid}/extinctions")
+    def lab_extinctions(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return {"extinctions": research_lab.extinction_events(eid)}
+
+    @app.post("/api/lab/{eid}/checkpoint")
+    def lab_checkpoint(eid: str):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return research_lab.checkpoint(eid)
+
+    @app.post("/api/lab/{eid}/restore")
+    def lab_restore(eid: str, body: dict = Body(...)):
+        if not EXPERIMENT_ID.match(eid):
+            raise ParamError("invalid experiment id")
+        return {"experiment": research_lab.restore(eid, body).to_dict()}
 
     @app.post("/api/load")
     def load(body: dict = Body(...)):

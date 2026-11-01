@@ -304,8 +304,12 @@
         const pal = paletteFor(dd), irr = 0.62 * U.clamp(Math.pow(star_lum(sys) / Math.pow(sunDist / AU, 2), 0.28), 0.45, 1.5);
         p.i1("uType", pal.type).f1("uSunI", irr).f1("uSeed", (dd.seed % 1000) / 37).f1("uBiome", pal.biome)
           .v3("uPalA", pal.A).v3("uPalB", pal.B).v3("uPalC", pal.C).v3("uPalD", pal.D).v3("uAtmCol", pal.atm);
-        p.f4("uP0", pal.p0[0], pal.p0[1], pal.p0[2], pal.p0[3] * (dd.moon ? 1.2 : 1));
-        p.f4("uP1", pal.p1[0] * (dd.atm > 0 ? 1 : 0) * (dd.moon ? 0 : 1), pal.p1[1], pal.p1[2], hasRing ? 1 : 0);
+        // sea level gated by simulated liquid water (no oceans without liquid water)
+        const seaLevel = (dd.simLiqW !== undefined && dd.simLiqW <= 0) ? 2.0 : pal.p0[0];
+        // atmosphere density gated by simulated atmosphere support
+        const atmDensity = (dd.simAtm !== undefined && dd.simAtm <= 0) ? 0.0 : pal.p1[0];
+        p.f4("uP0", seaLevel, pal.p0[1], pal.p0[2], pal.p0[3] * (dd.moon ? 1.2 : 1));
+        p.f4("uP1", atmDensity * (dd.atm > 0 ? 1 : 0) * (dd.moon ? 0 : 1), pal.p1[1], pal.p1[2], hasRing ? 1 : 0);
         p.f3("uStarCol", 1, 1, 1).f1("uStarT", 5772);
       }
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND);
@@ -313,7 +317,36 @@
       gl.disable(gl.SCISSOR_TEST);
     }
   }
-  function star_lum(sys) { return sys.star.data.L; }
+
+// ===========================================================================================
+// Chemical field overlay (microscopic view) - renders nutrient/monomer/waste concentrations
+// over a liquid-water planet when the habitat simulation provides chemistry state.
+class ChemicalFieldLayer {
+  constructor(R) {
+    this.R = R; const gl = R.gl;
+    this.prog = new U.GL.Program(gl, U.SH.chemVS, U.SH.chemFS, "chem-field");
+    this.vao = gl.createVertexArray();
+  }
+  draw(ctx, planet, opt) {
+    const gl = this.R.gl, p = this.prog.use();
+    if (!planet || opt.fade <= 0.002) return;
+    const dd = planet.data, R = dd.R;
+    const rel = [planet.local ? planet.local[0] : 0, planet.local ? planet.local[1] : 0, planet.local ? planet.local[2] : 0];
+    const liqW = dd.simLiqW !== undefined ? dd.simLiqW : 0;
+    if (liqW <= 0) return;
+    // chemical tint: nutrient=green, monomer=blue, waste=red (dominant field)
+    let chemCol = [0.2, 0.9, 0.3];
+    p.m3("uVinv", ctx.Vinv).f2("uProj", ctx.proj[0], ctx.proj[1]).f1("uPxScale", ctx.pxScale)
+      .f3("uC", rel[0], rel[1], rel[2]).f1("uR", R).f1("uTime", ctx.time)
+      .f1("uLiqW", liqW).v3("uChemCol", chemCol)
+      .v3("uSun", [1, 0, 0]).f1("uSunI", 1).f1("uSeed", (dd.seed % 1000) / 100);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(this.vao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.BLEND);
+  }
+}
+function star_lum(sys) { return sys.star.data.L; }
 
   U.Layers.GalaxySprites = GalaxySprites; U.Layers.GalaxyStars = GalaxyStars; U.Layers.SystemLayer = SystemLayer;
+  U.Layers.ChemicalFieldLayer = ChemicalFieldLayer;
 })(typeof window !== "undefined" ? window : globalThis);

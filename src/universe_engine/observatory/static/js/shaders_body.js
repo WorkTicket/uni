@@ -311,4 +311,48 @@
   out float vW;
   void main(){ vec3 v = uV*(aPos + uRel); gl_Position = vec4(v.x*uProj.x, v.y*uProj.y, 0.0, -v.z); vW = -v.z; }`;
   U.SH.orbitFS = PRE + `uniform vec4 uColor; out vec4 o; in float vW; void main(){ o = uColor; }`;
+
+// ----- chemical-field overlay (microscopic view) -----------------------------------------------
+// Renders nutrient/monomer/waste concentration as a coloured field over the planet surface,
+// gated to liquid-water worlds. Values are driven by the habitat simulation (chemistry fields).
+U.SH.chemVS = PRE + `
+in vec2 vNdc;
+uniform mat3 uVinv; uniform vec2 uProj; uniform float uPxScale;
+uniform vec3 uC; uniform float uR;
+uniform vec3 uSun; uniform float uSunI;
+uniform float uSeed, uTime;
+uniform float uLiqW;           // liquid water fraction from the habitat (0..1)
+uniform vec3 uChemCol;         // dominant chemical tint (nutrient=green, monomer=blue, waste=red)
+out vec2 vN;
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); vNdc = p*2.0-1.0; vN = vNdc; gl_Position = vec4(vNdc, 0.0, 1.0); }`;
+U.SH.chemFS = PRE + `
+in vec2 vN; out vec4 o;
+uniform mat3 uVinv; uniform vec2 uProj; uniform float uPxScale;
+uniform vec3 uC; uniform float uR;
+uniform vec3 uSun; uniform float uSunI;
+uniform float uSeed, uTime;
+uniform float uLiqW;
+uniform vec3 uChemCol;
+// procedural nutrient/monomer field (standing in for a real chemistry field until the
+// renderer reads the live habitat grid): three drifting concentration bands
+vec3 chemField(vec3 dir, float t){
+  vec3 p = dir * 3.0 + vec3(0.0, t*0.15, t*0.08);
+  float n = fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5);
+  float m = fract(sin(dot(p,vec3(269.5,183.3,246.1)))*43758.5);
+  float w = fract(sin(dot(p,vec3(113.5,271.9,124.6)))*43758.5);
+  return vec3(n, m, w);
+}
+void main(){
+  vec3 ndc = vec3(vN, 0.0, 1.0);
+  vec3 worldDir = uVinv * ndc;
+  float R = uR;
+  if (uLiqW <= 0.0){ discard; }   // no chemistry field on sterile/dry worlds
+  vec3 c = chemField(worldDir, uTime);
+  // weight toward the day side (lit by the star)
+  float lit = clamp(dot(normalize(worldDir), normalize(uSun)), 0.0, 1.0);
+  vec3 tint = uChemCol;
+  float bright = lit*0.6 + 0.25;
+  o = vec4(c * tint * bright * uLiqW, 0.9);
+}
+`;
 })(typeof window !== "undefined" ? window : globalThis);

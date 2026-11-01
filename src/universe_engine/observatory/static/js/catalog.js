@@ -252,7 +252,7 @@
     return n;
   };
 
-  U.makeSystem = function (star) {
+  U.makeSystem = function (star, simEnvs) {
     if (star.children) return star.children;
     const d = star.data, r = U.rng(U.hash2(d.seed, 0x51ed));
     const M = d.M, L = d.L, list = [];
@@ -281,11 +281,18 @@
       const ecc = Math.min(0.35, Math.pow(pr(), 3) * 0.5);
       const P = Math.sqrt(Math.pow(a / AU, 3) / M) * U.YEAR;          // Kepler's third law
       const omega = pr() * U.TAU;                                      // argument of periapsis
+      const sim = simEnvs && simEnvs[k];
+      // Simulation-linked appearance gates (Milestone F): oceans only where the
+      // planetary model supports stable liquid water; atmosphere only where
+      // the environmental model supports it. Falls back to procedural values.
+      const liqW = sim && sim.liqW !== undefined ? sim.liqW : (biome === "ocean" || biome === "temperate" ? 0.7 : 0.0);
+      const atmOk = sim && sim.atmOk !== undefined ? sim.atmOk : (d.atm > 0 ? 1 : 0);
       p.data = {
         a, ecc, P, M0: pr() * U.TAU, inc: (pr() - 0.5) * 0.12, node: pr() * U.TAU, omega,
         R: Rp, Mass: Mp, cls, biome, Teq, albedo, seed: U.hash3(d.seed, k, 0xbee),
         tilt: pr() < 0.5 ? pr() * 0.45 : pr() * 0.12, day: (giant ? 0.3 + 0.4 * pr() : 0.4 + 2.2 * pr()) * 86400, hasRings: giant && pr() < 0.4, index: k,
         atm: giant ? 1 : biome === "barren" ? 0 : Math.min(1, 0.4 + Mp / 5.972e24 * 0.4), star: star,
+        simLiqW: liqW, simAtm: atmOk,
       };
       p.data.rings = p.data.hasRings;
       list.push(p);
