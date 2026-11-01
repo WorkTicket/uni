@@ -1,43 +1,65 @@
 # Current milestone (updated 2026-11-01)
 
-Authoritative, machine-generated numbers: `docs/IMPLEMENTATION_STATUS.json` (regenerate with `python scripts/write_status.py`).
+Authoritative, machine-generated numbers: `docs/IMPLEMENTATION_STATUS.json`.
 
-Branch: `feature/project-genesis-research` (HEAD commit `a6e1538`, Sprint 9 complete).
+Branch: `feature/project-genesis-research` (HEAD commit `e0510d9`, Sprint 10 committed).
 
-**Project Genesis research program — Sprints 1-9 complete.**
+**Project Genesis research program — Sprints 1-10 committed.**
 
-Sprint 1 — Research infrastructure: shared agent/environment contracts (`src/universe_engine/research/contracts.py`), experiment manifests, reproducible checkpoints, experiment runner.
+Sprint 1 — Research infrastructure: contracts, manifests, checkpoints, runner (`research/contracts.py`).
 
-Sprint 2 — Minimal quantum validation: `QuantumState`, `DensityMatrix`, `Hamiltonian`, `QuantumOperator`, `QuantumMeasurement`, `EntangledSystem`, `QuantumEnvironment` (`src/universe_engine/research/quantum/states.py`). CHSH Bell experiment lab (`src/universe_engine/research/quantum/chsh.py`).
+Sprint 2 — Quantum validation: `states.py`, `chss.py` (CHSH quantum S ≈ 2.83, classical S = 2.0).
 
-Sprint 3 — Minimal embodied agent: GridWorld environment, `ReactiveController`, `RecurrentWorldModelController` (`src/universe_engine/research/environment/gridworld.py`).
+Sprint 3 — Embodied agent: GridWorld, ReactiveController, RecurrentWorldModelController (`research/environment/gridworld.py`).
 
-Sprint 4 — World-model learning: reactive vs recurrent comparison experiment (`src/universe_engine/research/world_model/experiment.py`).
+Sprint 4 — World-model learning comparison (`research/world_model/experiment.py`).
 
-Sprint 5 — Self-model and workspace: `SelfModel`, `BodySchema`, `GlobalWorkspace`, `WorkspaceAgentController` (ECS-IW) (`src/universe_engine/research/self_model/model.py`, `src/universe_engine/research/workspace/model.py`).
+Sprint 5 — Self-model and workspace (ECS-IW) (`research/self_model/model.py`, `research/workspace/model.py`).
 
-Sprint 6 — Evolutionary architecture search: `AgentGenome`, `AgentPhenotype`, `EvolutionaryExperiment`, `EvolutionArchive` (`src/universe_engine/research/evolution/experiment.py`).
+Sprint 6 — Evolutionary architecture search (`research/evolution/experiment.py`).
 
-Sprint 7 — Scientific discovery: Bell apparatus, candidate correlation models, discovery agent (`src/universe_engine/research/discovery/experiment.py`).
+Sprint 7 — Scientific discovery (`research/discovery/experiment.py`).
 
-Sprint 8 — Planetary ecology integration: `PlanetaryAgent` coupled to habitat chemistry (`src/universe_engine/research/planetary_agent/experiment.py`).
+Sprint 8 — Planetary ecology integration (`research/planetary_agent/experiment.py`).
 
-Sprint 9 — Multiscale fidelity research: `ScaleCoupler`, `ResolutionManager`, `AdaptiveScheduler`, `FixedReferenceSolver` (`src/universe_engine/research/multiscale/adaptive.py`).
+Sprint 9 — Multiscale fidelity research (`research/multiscale/adaptive.py`).
 
-## Sprint 10 — Independent scientific review (IN PROGRESS)
+Sprint 10 — Independent scientific review: `research/review.py`, `docs/SCIENTIFIC_REVIEW.md`. 6 of 7 modules passed.
 
-`src/universe_engine/research/review.py` runs multi-seed validation across all 7 research modules and writes `docs/SCIENTIFIC_REVIEW.md`.
+## Sprint 11 — World-model failure investigation (DIAGNOSTIC PHASE COMPLETE)
 
-**Measured results (seeds 1, 42, 99):**
-- quantum (Program B): PASSED — CHSH quantum S ≈ 2.83 (violates classical bound of 2), classical S ≈ 2.0 (no violation), no-signalling holds.
-- embodied agent / world model (Programs D1-D4): FAILED — recurrent world-model agent UNDERPERFORMS reactive baseline across all seeds (recurrent reward negative vs reactive positive). Documented honestly as a failure case; no improvement claimed.
-- self-model and workspace (Programs D5-D6): PASSED — self-model calibration, workspace broadcasting functional.
-- scientific discovery (Program F): PASSED — agent selects quantum model on held-out data, CHSH S ≈ 2.83.
-- multiscale fidelity (Program A9): PASSED — exact mass conservation, cost savings vs fixed reference. (Center-of-mass accuracy limited by simple region-based advection; documented.)
-- evolutionary architecture search (Program C): PASSED — diverse lineages, reproduction, extinction, environmental change.
-- planetary ecology integration (Programs C8/D8): PASSED — agent survives 20 steps in habitat patch.
+Original failure reproduced exactly: recurrent world-model agent underperforms
+reactive baseline on GridWorld foraging for seeds 1/42/99
+(reactive +0.48/+0.49/+0.42 vs recurrent -0.77/-1.16/-2.44).
 
-**Overall: 6 of 7 modules passed. All results reported with uncertainty; no claim of consciousness.**
+**Root cause: H1 — the task does not require memory.** GridWorld is fully
+observable; current sensory input (nearby_resources, energy_level, hazards)
+is sufficient for near-optimal reactive behavior. Memory adds cost without
+benefit on this task. This is a legitimate null result, retained and
+documented honestly; pass thresholds were not changed.
+
+**Contributing bugs fixed:**
+- H6: `RecurrentWorldModelController.select_action` corrupted `self.hidden`
+  during action-candidate evaluation (committed to last candidate, not chosen
+  action). Fixed — correctness only, not sufficient to flip the result.
+- H3: value function used misaligned observation-energy prediction; added a
+  learned reward predictor `W_r` trained on observed reward (partial
+  improvement: seed 1 -0.77 → +0.03, still below reactive +0.48).
+
+**Key demonstration (memory helps only when required):**
+- GridWorld (fully observable): reactive +0.48 > recurrent -0.77 (memory not needed).
+- Delayed-cue (memory required): recurrent -0.06 > reactive -0.21 (memory helps).
+
+New files: `research/diagnostics/memory_tasks.py`, `research/diagnostics/experiment.py`,
+`docs/SPRINT_11_FINDINGS.md`.
+
+**Implication for ECS-IW:** memory/world-model/self-model/workspace provide
+measurable advantages when the task genuinely requires temporal integration or
+cross-module coordination, not universally. Claims must be task-conditioned.
+No claim of consciousness is made.
+
+Deferred (Phase 6-8): larger-seed abulations, statistical analysis, integration
+into a persistent habitat organism.
 
 ## What this is NOT
 
@@ -48,4 +70,7 @@ Sprint 9 — Multiscale fidelity research: `ScaleCoupler`, `ResolutionManager`, 
 
 ## Resume here
 
-Sprint 10 review report written to `docs/SCIENTIFIC_REVIEW.md`. Remaining: commit Sprint 10 work, then decide whether to revise the failing world-model architecture (Program D) before declaring Sprint 10 complete.
+Sprint 11 diagnostic complete. Next: decide whether to (a) retain the honest
+null result on GridWorld and refine ECS-IW claims to be task-conditioned, or
+(b) run larger-seed ablation/statistical analysis (Phase 6-7) before any
+architecture revision.

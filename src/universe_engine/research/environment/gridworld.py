@@ -358,6 +358,10 @@ class RecurrentWorldModelController:
         self.W_a = self.rng.standard_normal((hidden_dim, 4))  # 4 action types
         self.W_o = self.rng.standard_normal((hidden_dim, 6))  # 6 obs features
         self.W_pred = self.rng.standard_normal((6, hidden_dim)) * 0.1
+        # Reward predictor: predicts immediate reward from [hidden, action].
+        # Trained on observed reward; used for action selection so the world
+        # model's predictions are aligned with the actual objective.
+        self.W_r = self.rng.standard_normal((1, hidden_dim + 4)) * 0.1
         self.prediction_error_history: List[float] = []
 
     def _obs_vector(self, obs: SensoryObservation) -> np.ndarray:
@@ -382,24 +386,32 @@ class RecurrentWorldModelController:
         obs_vec = self._obs_vector(observation)
 
         # Update hidden state (recurrent dynamics)
-        # Use current action candidate - try all actions, predict outcomes
+        # Try all action candidates, predict outcomes, pick best without
+        # corrupting the recurrent state during candidate evaluation.
         best_action = "wait"
         best_value = -float("inf")
         best_action_vec = np.zeros(4)
+        best_hidden = self.hidden.copy()
 
         for at, idx in (("move", 0), ("forage", 1), ("rest", 2), ("wait", 3)):
             av = np.zeros(4); av[idx] = 1.0
             hidden_next = np.tanh(self.W_h @ self.hidden + self.W_a @ av + self.W_o @ obs_vec)
             pred_obs = self.W_pred @ hidden_next
-            # Simple value: prefer predicted energy gain, avoid hazard
-            predicted_energy = pred_obs[0]
+            # Value: predicted immediate reward (from reward predictor) minus
+            # predicted hazard. Using predicted observation energy directly is
+            # misaligned with the actual foraging objective, so a learned
+            # reward predictor is used instead.
+            sa = np.concatenate([hidden_next, av])
+            predicted_reward = float((self.W_r @ sa)[0])
             predicted_hazard = pred_obs[3]
-            value = predicted_energy - 0.5 * predicted_hazard
+            value = predicted_reward - 0.5 * predicted_hazard
             if value > best_value:
                 best_value = value
                 best_action = at
                 best_action_vec = av
-                self.hidden = hidden_next  # commit to chosen action's hidden state
+                best_hidden = hidden_next
+        # Commit recurrent state to the chosen action's outcome.
+        self.hidden = best_hidden
 
         # Build action parameters
         params = {}
@@ -437,6 +449,11 @@ class RecurrentWorldModelController:
         self.W_o -= self.lr * 0.01 * np.outer(hidden_pred, error)
         self.W_a -= self.lr * 0.01 * np.outer(hidden_pred, action_vec)
 
+        # Train reward predictor on observed reward (MSE gradient).
+        sa = np.concatenate([hidden_pred, action_vec])
+        pred_r = float((self.W_r @ sa)[0])
+        self.W_r -= self.lr * 2.0 * (pred_r - reward) * sa.reshape(1, -1)
+
         # Update hidden to the actual next state (teacher forcing)
         self.hidden = np.tanh(self.W_h @ self.hidden + self.W_a @ action_vec + self.W_o @ next_obs_vec)
 
@@ -446,6 +463,7 @@ class RecurrentWorldModelController:
             "hidden": self.hidden.tolist(),
             "W_h": self.W_h.tolist(), "W_a": self.W_a.tolist(),
             "W_o": self.W_o.tolist(), "W_pred": self.W_pred.tolist(),
+            "W_r": self.W_r.tolist(),
             "actions_taken": self.actions_taken,
             "prediction_error_history": self.prediction_error_history[-100:],
         }
@@ -456,5 +474,6 @@ class RecurrentWorldModelController:
         self.W_a = np.array(data.get("W_a", self.W_a))
         self.W_o = np.array(data.get("W_o", self.W_o))
         self.W_pred = np.array(data.get("W_pred", self.W_pred))
+        self.W_r = np.array(data.get("W_r", self.W_r))
         self.actions_taken = int(data.get("actions_taken", 0))
         self.prediction_error_history = list(data.get("prediction_error_history", []))

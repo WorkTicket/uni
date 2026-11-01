@@ -1,10 +1,10 @@
 {
   "project": "universe-engine",
   "program": "Project Genesis",
-  "current_phase": "Sprint 10: Independent scientific review",
-  "phase_status": "sprints_1_9_complete; sprint_10_review_written; world_model_module_failure_documented",
+  "current_phase": "Sprint 11: world-model failure investigation (diagnostic complete)",
+  "phase_status": "sprints_1_10_committed; sprint_11_diagnostic_complete",
   "branch": "feature/project-genesis-research",
-  "head_commit": "a6e1538",
+  "head_commit": "e0510d9",
   "research_sprints": {
     "sprint_1_research_infrastructure": "complete",
     "sprint_2_quantum_validation": "complete",
@@ -15,19 +15,20 @@
     "sprint_7_scientific_discovery": "complete",
     "sprint_8_planetary_ecology": "complete",
     "sprint_9_multiscale_fidelity": "complete",
-    "sprint_10_independent_review": "review_report_written; one_module_failure_documented"
+    "sprint_10_independent_review": "complete",
+    "sprint_11_world_model_failure_investigation": "diagnostic_complete; null_result_retained"
   },
   "research_modules": {
     "quantum_program_B": {
       "status": "implemented_and_verified",
       "tests": "tests/research/test_quantum.py",
-      "key_result": "CHSH quantum S ≈ 2.83 (violates classical bound 2), classical S ≈ 2.0, no-signalling holds",
+      "key_result": "CHSH quantum S ~ 2.83 violates classical bound 2; classical S ~ 2.0; no-signalling holds",
       "modules": ["states.py", "chsh.py"]
     },
     "embodied_agent_world_model_programs_D1_D4": {
-      "status": "implemented; review_FAILURE",
+      "status": "implemented; honest_null_result",
       "tests": "tests/research/test_world_model.py, tests/research/test_gridworld.py",
-      "key_result": "recurrent world-model agent UNDERPERFORMS reactive baseline across all seeds 1/42/99; documented honestly, no improvement claimed",
+      "key_result": "recurrent world-model agent UNDERPERFORMS reactive baseline on GridWorld (seeds 1/42/99). Root cause H1: task is fully observable, memory not needed. Bug H6 fixed (correctness). Reward predictor H3 added (partial). Null result RETAINED, thresholds unchanged.",
       "modules": ["gridworld.py", "world_model/experiment.py"]
     },
     "self_model_workspace_programs_D5_D6": {
@@ -39,7 +40,7 @@
     "scientific_discovery_program_F": {
       "status": "implemented_and_verified",
       "tests": "tests/research/test_discovery.py",
-      "key_result": "agent selects quantum model on held-out data; CHSH S ≈ 2.83 without being supplied CHSH formula",
+      "key_result": "agent selects quantum model on held-out data; CHSH S ~ 2.83 without being supplied CHSH formula",
       "modules": ["discovery/experiment.py"]
     },
     "multiscale_fidelity_program_A9": {
@@ -59,6 +60,11 @@
       "tests": "tests/research/test_planetary_agent.py",
       "key_result": "agent survives in habitat patch, coupled to chemistry",
       "modules": ["planetary_agent/experiment.py"]
+    },
+    "diagnostics_sprint_11": {
+      "status": "new_diagnostic_module",
+      "key_result": "demonstrates memory helps on memory-required delayed-cue task (recurrent -0.06 > reactive -0.21) but not on fully-observable GridWorld (reactive +0.48 > recurrent -0.77)",
+      "modules": ["diagnostics/memory_tasks.py", "diagnostics/experiment.py"]
     }
   },
   "review_report": {
@@ -66,12 +72,15 @@
     "modules_tested": 7,
     "modules_passed": 6,
     "all_passed": false,
-    "seeds": [1, 42, 99],
-    "failure_cases": [
-      "seed=1: recurrent did not outperform reactive",
-      "seed=42: recurrent did not outperform reactive",
-      "seed=99: recurrent did not outperform reactive"
-    ]
+    "seeds": [1, 42, 99]
+  },
+  "sprint_11_findings": {
+    "path": "docs/SPRINT_11_FINDINGS.md",
+    "root_cause": "H1: GridWorld task does not require memory (fully observable)",
+    "bugs_fixed": ["H6: recurrent hidden state corrupted during action-candidate evaluation"],
+    "partial_improvements": ["H3: learned reward predictor W_r added for action selection"],
+    "null_result": "retained; pass thresholds not changed",
+    "ecs_iw_implication": "memory/world-model/self-model/workspace advantageous only when task requires temporal integration; claims must be task-conditioned"
   },
   "scientific_honesty": {
     "consciousness_claim": "none made or implied",
@@ -85,15 +94,11 @@
   },
   "commands": {
     "review_report": "python -c \"from universe_engine.research.review import write_review_report; write_review_report('docs/SCIENTIFIC_REVIEW.md')\"",
-    "quantum_chsh": "python -c \"from universe_engine.research.quantum import verify_chsh_limits; print(verify_chsh_limits())\"",
-    "world_model_comparison": "python -c \"from universe_engine.research.world_model import run_comparison_experiment; run_comparison_experiment()\"",
-    "discovery": "python -c \"from universe_engine.research.discovery import run_discovery_experiment; run_discovery_experiment()\"",
-    "evolution": "python -c \"from universe_engine.research.evolution import EvolutionaryExperiment; EvolutionaryExperiment().run(50)\"",
-    "multiscale": "python -c \"from universe_engine.research.multiscale import benchmark_adaptive_vs_fixed; benchmark_adaptive_vs_fixed()\"",
-    "planetary_agent": "python -c \"from universe_engine.research.planetary_agent import run_planetary_agent_experiment; run_planetary_agent_experiment()\""
+    "sprint_11_delayed_cue": "python <diagnostics delayed-cue train/eval script>",
+    "gridworld_reproduction": "python -c \"from universe_engine.research.world_model import run_comparison_experiment; run_comparison_experiment(seed=1)\""
   },
-  "updated_utc": "2026-11-01T18:00:00+00:00",
-  "repo_revision_at_generation": "feature/project-genesis-research (a6e1538)",
-  "next_action": "Commit Sprint 10 review work; decide whether to revise the failing world-model architecture before declaring Sprint 10 complete",
-  "next_phase": "Post-Sprint 10: revise world-model architecture (Program D) based on honest failure evidence, or proceed to release"
+  "updated_utc": "2026-11-01T18:30:00+00:00",
+  "repo_revision_at_generation": "feature/project-genesis-research (e0510d9)",
+  "next_action": "Commit Sprint 11 diagnostic findings; decide whether to run Phase 6-7 ablations/statistics or retain the honest null result",
+  "next_phase": "Post-Sprint 11: refine ECS-IW claims to be task-conditioned; optional larger-seed analysis"
 }
