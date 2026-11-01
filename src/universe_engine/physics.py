@@ -20,8 +20,10 @@ def validate_cosmology(c):
         raise ValueError('invalid cosmological parameters')
     if abs(c['Omega_m']+c['Omega_r']+c['Omega_Lambda']-1) > 1e-7:
         raise ValueError('starter requires flat cosmology with sum Omega = 1')
-    if not (0 < c['a_start'] < c['a_end'] <= 1):
-        raise ValueError('require 0 < a_start < a_end <= 1')
+    if not (0 < c['a_start'] < c['a_end']):
+        raise ValueError('require 0 < a_start < a_end')
+    if c['a_end'] > 10:
+        raise ValueError('a_end beyond the validated future domain (a <= 10)')
     if int(c['steps']) < 8 or int(c['steps']) > 200000:
         raise ValueError('steps outside supported limits')
 

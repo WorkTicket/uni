@@ -194,26 +194,30 @@
       attr(gl, this.orb, "aPos", 3, 12, 0);
       this.bodies = [];
     }
-    // returns the list of bodies with star-frame positions (metres) for the orbital clock
-    layout(star, clk) {
+    // returns the list of bodies with star-frame positions (metres) for the absolute simulation time `t`
+    // (seconds since the Big Bang). Frame-rate independent: position is a pure function of t.
+    layout(star, t) {
       const list = [{ node: star, pos: [0, 0, 0], R: star.data.R, kind: "star", parent: null }];
       const tmp = [0, 0, 0];
       for (const p of star.children || []) {
-        const pp = U.orbitPos(p.data, clk, tmp.slice()); p.local = pp;
+        const pp = U.orbitPos(p.data, t, tmp.slice()); p.local = pp;
         list.push({ node: p, pos: pp, R: p.data.R, kind: "planet", parent: null });
         for (const m of p.children || []) {
-          const mp = U.orbitPos(m.data, clk, [0, 0, 0]); m.local = mp;
+          const mp = U.orbitPos(m.data, t, [0, 0, 0]); m.local = mp;
           list.push({ node: m, pos: V.add(pp, mp), R: m.data.R, kind: "moon", parent: p, rel: mp });
         }
       }
       return list;
     }
-    drawOrbit(ctx, a, ecc, inc, node, parentPos, camStar, alpha, col) {
-      const gl = this.R.gl, n = 200, v = new Float32Array((n + 1) * 3), d = { a, ecc, inc, node };
+    drawOrbit(ctx, a, ecc, inc, node, omega, parentPos, camStar, alpha, col) {
+      const gl = this.R.gl, n = 200, v = new Float32Array((n + 1) * 3), d = { a, ecc, inc, node, omega };
       for (let i = 0; i <= n; i++) {
-        const E = i / n * U.TAU, x = a * (Math.cos(E) - ecc), z = a * Math.sqrt(1 - ecc * ecc) * Math.sin(E);
-        const ci = Math.cos(inc), si = Math.sin(inc), cn = Math.cos(node), sn = Math.sin(node), x1 = x * cn - z * sn, z1 = x * sn + z * cn;
-        v[i * 3] = x1; v[i * 3 + 1] = z1 * si; v[i * 3 + 2] = z1 * ci;
+        const E = i / n * U.TAU, x = a * (Math.cos(E) - ecc), y = a * Math.sqrt(1 - ecc * ecc) * Math.sin(E);
+        const co = Math.cos(omega), so = Math.sin(omega);
+        const xp = x * co - y * so, yp = x * so + y * co;
+        const ci = Math.cos(inc), si = Math.sin(inc), cn = Math.cos(node), sn = Math.sin(node);
+        const x1 = xp * cn - yp * sn * ci, z1 = xp * sn + yp * cn * ci, y1 = yp * si;
+        v[i * 3] = x1; v[i * 3 + 1] = y1; v[i * 3 + 2] = z1;
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, this.orbBuf); gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW);
       const rel = V.sub(parentPos, camStar), p = this.orb.use();
@@ -221,11 +225,11 @@
       gl.bindVertexArray(this.orbVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.orbBuf); attr(gl, this.orb, "aPos", 3, 12, 0);
       gl.drawArrays(gl.LINE_STRIP, 0, n + 1);
     }
-    // sys: {star, camStar (metres, star frame), clk, spinClk}
+    // sys: {star, camStar (metres, star frame), t (absolute simulation seconds), spinClk}
     draw(ctx, sys, opt) {
       const gl = this.R.gl, star = sys.star, camS = sys.camStar, fade = opt.fade;
       if (fade <= 0.002) return;
-      const bodies = this.layout(star, sys.clk); this.bodies = bodies;
+      const bodies = this.layout(star, sys.t); this.bodies = bodies;
       const W = ctx.w, H = ctx.h, sd = star.data;
       const hot = Math.pow(sd.T / 5772, 1.4);
       const starI = U.clamp(7 * hot, 3, 60);
@@ -239,7 +243,7 @@
         const dist = V.len(V.sub(b.pos, camS)), dpar = V.len(V.sub(base, camS));
         const near = U.smooth(b.R * 8, b.R * 60, dist);
         const a = (b.kind === "planet" ? 0.16 : 0.10) * near * fade * (opt.orbits === false ? 0 : 1);
-        if (a > 0.004) this.drawOrbit(ctx, dd.a, dd.ecc, dd.inc, dd.node, base, camS, a, b.kind === "planet" ? [0.5, 0.65, 0.9] : [0.55, 0.55, 0.65]);
+        if (a > 0.004) this.drawOrbit(ctx, dd.a, dd.ecc, dd.inc, dd.node, dd.omega, base, camS, a, b.kind === "planet" ? [0.5, 0.65, 0.9] : [0.55, 0.55, 0.65]);
       }
       // sort far -> near
       const items = bodies.map((b) => { const rel = V.sub(b.pos, camS); return { b, rel, d: V.len(rel) }; }).sort((x, y) => y.d - x.d);

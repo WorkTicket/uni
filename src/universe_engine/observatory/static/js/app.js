@@ -18,12 +18,15 @@
       this.R = { gl }; this.post = new U.GL.Post(gl); this.post.fmt = hdr ? "hdr" : "ldr";
       this.web = new U.Layers.WebLayer(this.R); this.sprites = new U.Layers.GalaxySprites(this.R);
       this.stars = new U.Layers.GalaxyStars(this.R); this.system = new U.Layers.SystemLayer(this.R);
-      this.quality = this.opts.quality || "medium"; this.seed = 1; this.uni = null;
-      this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.stopAtNow = true; this.reachedNow = false;
+      this.quality = this.opts.quality || "medium";       this.seed = 1; this.uni = null;
+      this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.stopAtNow = false; this.reachedNow = false;
       this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
       this.node = null; this.pos = [0, 0, 0]; this.q = Q.ident(); this.zoomAcc = 0; this.recenter = 0;
       this.mouse = { x: 0.5, y: 0.5, inside: false }; this.hover = null; this.lastPick = 0;
       this.exposure = 1; this.bloom = 0.38; this.autopilot = null; this.listeners = {};
+      this.camMode = "orbit";        // orbit | follow | surface | free
+      this.followTarget = null;      // {node, t} for follow/surface tracking
+      this.followDist = 0;           // metres from target centre
       this.resize();
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
@@ -59,8 +62,20 @@
     // ---- time ------------------------------------------------------------------------------------------
     setS(s) { this.s = U.clamp(s, 0, 1); this.t = U.Cosmo.tOfS(this.s); if (this.s < U.Cosmo.NOW_S - 1e-4) this.reachedNow = false; }
     setT(t) { this.setS(U.Cosmo.sOfT(t)); this.t = t; }
-    play() { if (this.s >= 0.9999) this.setS(0); this.playing = true; this.emit("play", true); }
+    play() { this.playing = true; this.emit("play", true); }
     pause() { this.playing = false; this.emit("play", false); }
+
+    // ---- timeline control ----
+    stepForward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s + dt / TOTAL_SECONDS, 0, 1)); }
+    stepBackward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s - dt / TOTAL_SECONDS, 0, 1)); }
+    jumpToPresent() { this.pause(); this.setS(U.Cosmo.NOW_S); this.reachedNow = false; }
+    jumpToFuture(fraction = 0.5) { this.pause(); const f = U.clamp(fraction, 0, 1); this.setS(U.Cosmo.NOW_S + f * (1 - U.Cosmo.NOW_S)); }
+    setSpeed(speed) { this.speed = speed; }
+
+    // checkpoints (named saved timeline states)
+    checkpoint(id) { this._checkpoints = this._checkpoints || {}; this._checkpoints[id] = { s: this.s, t: this.t, node: this.node, pos: this.pos.slice(), q: this.q.slice() }; return this._checkpoints[id]; }
+    returnToCheckpoint(id) { const cp = this._checkpoints && this._checkpoints[id]; if (!cp) return false; this.pause(); this.setS(cp.s); this.t = cp.t; this.node = cp.node; this.pos = cp.pos.slice(); this.q = cp.q.slice(); this.recenter = 1.0; return true; }
+    listCheckpoints() { return this._checkpoints ? Object.keys(this._checkpoints) : []; }
 
     // ---- chain & frames ---------------------------------------------------------------------------------
     chain() { return this.node.chain(); }
@@ -101,6 +116,20 @@
     popOut() {
       const n = this.node; if (!n.parent) return;
       this.pos = V.add(this.pos, n.local); this.setNode(n.parent); this.recenter = 1.2;
+    }
+    // ---- camera modes ---------------------------------------------------------------
+    follow(node, distM) { this.camMode = "follow"; this.followTarget = { node, t: this.t }; this.followDist = distM || this.limits(node).pop; this.recenter = 1.0; }
+    surface(node) { this.camMode = "surface"; this.followTarget = { node, t: this.t }; const lim = this.limits(node); this.followDist = lim.min * 1.15; this.recenter = 1.0; }
+    orbitMode() { this.camMode = "orbit"; this.followTarget = null; }
+    freeMode() { this.camMode = "free"; this.followTarget = null; }
+    modeOf() { return this.camMode; }
+
+    // resolve the follow/surface target's current world position (metres, universe frame)
+    followPosition() {
+      const ft = this.followTarget; if (!ft) return null;
+      const chain = ft.node.chain(); const cams = this.camFrames(chain);
+      // the camera frame of the focused node is its position in the universe frame
+      return cams[0];
     }
     // resolve a hover target into a node (creating it lazily)
     nodeFromHover(h) {
@@ -244,8 +273,7 @@
       // cosmic clock
       if (this.playing) {
         this.setS(this.s + dt * this.speed / TOTAL_SECONDS);
-        if (this.stopAtNow && !this.reachedNow && this.s >= U.Cosmo.NOW_S) { this.s = U.Cosmo.NOW_S; this.t = U.Cosmo.tOfS(this.s); this.reachedNow = true; this.pause(); this.emit("now"); }
-        if (this.s >= 1) this.pause();
+        if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
       }
       // local clocks (decoupled from cosmic time so planets and spiral arms move at a watchable pace)
       const kind = this.node.kind, ur = this.userRate;
@@ -266,6 +294,17 @@
       }
       // keep the camera outside the minimum distance (e.g. planet moved)
       { const lim = this.limits(this.node), d = V.len(this.pos); if (d < lim.min) this.pos = V.scale(this.pos, lim.min / Math.max(d, 1e-9)); }
+      // follow / surface tracking: hold a stable offset from the tracked body, keep it centred
+      if ((this.camMode === "follow" || this.camMode === "surface") && this.followTarget && this.followTarget.node) {
+        const ft = this.followTarget.node;
+        if (ft !== this.node) { this.setNode(ft); this.recenter = 1.0; }
+        const lim = this.limits(ft);
+        const d = V.len(this.pos);
+        let mind = this.camMode === "surface" ? Math.max(lim.min * 1.1, ft.size * 1.02) : lim.min;
+        if (d < mind) this.pos = V.scale(this.pos, mind / Math.max(d, 1e-9));
+        if (d > lim.pop * 4) this.pos = V.scale(this.pos, (lim.pop * 4) / Math.max(d, 1e-9));
+        this.recenter = Math.max(this.recenter, 0.3);
+      }
       // recentre on the focus
       if (this.recenter > 0) {
         this.recenter -= dt;
@@ -395,7 +434,7 @@
       if (iS >= 0) {
         const S = chain[iS], tG = t / U.GYR, alive = tG >= S.data.tb && tG < S.data.tb + S.data.life;
         const fade = alive ? 1 : 0;
-        this.system.draw(ctx, { star: S, camStar: cams[iS], clk: this.sysClk, spinClk: this.spinClk }, { fade, orbits: this.orbits !== false });
+        this.system.draw(ctx, { star: S, camStar: cams[iS], t: this.t, spinClk: this.spinClk }, { fade, orbits: this.orbits !== false });
       }
       // --- post
       const k = this.node.kind, tgt = (k === "planet" || k === "moon") ? [0.16, 1.0] : k === "star" ? [0.24, 1.0] : k === "galaxy" ? [0.5, 1.0] : [0.4, 1.0];

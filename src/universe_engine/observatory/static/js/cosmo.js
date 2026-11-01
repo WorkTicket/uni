@@ -98,7 +98,9 @@
     { t: 4e9 * Y,  name: "Cosmic noon",                text: "Star formation peaks, then slowly declines as the gas supply thins." },
     { t: 9e9 * Y,  name: "Dark-energy era",            text: "Cosmic expansion begins to accelerate. Structure growth stalls." },
     { t: 13.78e9 * Y, name: "Present day",             text: "13.8 billion years after the Big Bang." },
-    { t: 15e9 * Y, name: "The far future",             text: "Expansion keeps accelerating. Star formation fades; massive stars die." },
+    { t: 15e9 * Y, name: "The far future",              text: "Expansion keeps accelerating. Star formation fades; massive stars die." },
+    { t: 30e9 * Y, name: "Trillion-year future",        text: "Star formation ends; the last red dwarfs fade. Galaxies drift beyond the observable horizon." },
+    { t: 100e9 * Y, name: "Dark-energy era",            text: "The expansion approaches a de Sitter phase. Bound structures remain isolated in an ever-larger void." },
   ];
   API.EPOCHS = EPOCHS;
   API.epochAt = function (t) { let e = EPOCHS[0]; for (const x of EPOCHS) if (t >= x.t) e = x; return e; };

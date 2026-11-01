@@ -25,3 +25,24 @@ def test_rk4_convergence():
     c={**C,'steps':1000}
     y=solve(c)['elapsed_Gyr'][-1]
     assert abs(x-y)<0.001
+
+def test_future_cosmology_a_gt_1():
+    c={**C,'a_end':2.0,'steps':1000}
+    s=solve(c)
+    assert s['a'][-1]==pytest.approx(2.0)
+    assert np.all(np.diff(s['elapsed_Gyr'])>0)
+    assert np.all(np.isfinite(s['H']))
+    assert s['elapsed_Gyr'][-1] > solve(C)['elapsed_Gyr'][-1]
+
+def test_future_cosmology_monotone_D():
+    c={**C,'a_end':5.0,'steps':2000}
+    s=solve(c)
+    assert np.all(np.diff(s['D'])>0)
+
+def test_validate_rejects_a_end_beyond_domain():
+    bad={**C,'a_end':11.0}
+    with pytest.raises(ValueError): validate_cosmology(bad)
+
+def test_validate_allows_future_a_end():
+    c={**C,'a_end':3.0}
+    validate_cosmology(c)  # must not raise

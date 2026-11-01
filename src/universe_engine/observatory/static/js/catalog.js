@@ -280,8 +280,10 @@
       p.size = Rp;
       const ecc = Math.min(0.35, Math.pow(pr(), 3) * 0.5);
       const P = Math.sqrt(Math.pow(a / AU, 3) / M) * U.YEAR;          // Kepler's third law
+      const omega = pr() * U.TAU;                                      // argument of periapsis
       p.data = {
-        a, ecc, P, M0: pr() * U.TAU, inc: (pr() - 0.5) * 0.12, node: pr() * U.TAU, R: Rp, Mass: Mp, cls, biome, Teq, albedo, seed: U.hash3(d.seed, k, 0xbee),
+        a, ecc, P, M0: pr() * U.TAU, inc: (pr() - 0.5) * 0.12, node: pr() * U.TAU, omega,
+        R: Rp, Mass: Mp, cls, biome, Teq, albedo, seed: U.hash3(d.seed, k, 0xbee),
         tilt: pr() < 0.5 ? pr() * 0.45 : pr() * 0.12, day: (giant ? 0.3 + 0.4 * pr() : 0.4 + 2.2 * pr()) * 86400, hasRings: giant && pr() < 0.4, index: k,
         atm: giant ? 1 : biome === "barren" ? 0 : Math.min(1, 0.4 + Mp / 5.972e24 * 0.4), star: star,
       };
@@ -296,7 +298,7 @@
         const Rm = (giant ? 0.04 + 0.22 * mr() : 0.1 + 0.2 * mr()) * U.REARTH * (giant ? 1 : 1);
         mo.name = p.name + "-" + U.ROMAN[m + 1].toLowerCase(); mo.size = Rm;
         const Mp2 = p.data.Mass, Pm = 2 * Math.PI * Math.sqrt(Math.pow(ma, 3) / (6.674e-11 * Mp2));
-        mo.data = { a: ma, ecc: 0.02, P: Pm, M0: mr() * U.TAU, inc: (mr() - 0.5) * 0.2, node: mr() * U.TAU, R: Rm, Mass: Rm * Rm * Rm * 3.3e3 * 4.19, cls: "Moon", biome: mr() < 0.5 ? "barren" : "ice", Teq: Teq, albedo: 0.3, seed: U.hash3(p.data.seed, m, 0x301), tilt: 0, day: Pm, hasRings: false, atm: 0, index: m, star: star, moon: true };
+        mo.data = { a: ma, ecc: 0.02, P: Pm, M0: mr() * U.TAU, inc: (mr() - 0.5) * 0.2, node: mr() * U.TAU, omega: mr() * U.TAU, R: Rm, Mass: Rm * Rm * Rm * 3.3e3 * 4.19, cls: "Moon", biome: mr() < 0.5 ? "barren" : "ice", Teq: Teq, albedo: 0.3, seed: U.hash3(p.data.seed, m, 0x301), tilt: 0, day: Pm, hasRings: false, atm: 0, index: m, star: star, moon: true };
         p.children.push(mo); ma *= 1.7 + 1.2 * mr();
       }
       a *= 1.35 + 0.95 * pr();
@@ -309,13 +311,20 @@
     return list;
   };
 
-  // Keplerian position (metres) of a planet/moon in its parent's frame at orbital clock `clk` (seconds)
-  U.orbitPos = function (d, clk, out) {
-    const Mn = d.M0 + U.TAU * clk / d.P;
-    let E = Mn; for (let i = 0; i < 6; i++) E -= (E - d.ecc * Math.sin(E) - Mn) / (1 - d.ecc * Math.cos(E));
-    const x = d.a * (Math.cos(E) - d.ecc), z = d.a * Math.sqrt(1 - d.ecc * d.ecc) * Math.sin(E);
+  // Keplerian position (metres) of a planet/moon in its parent's frame at time `t` (seconds).
+  // Solves Kepler's equation M = E - e sin E (Newton, robust for e < 1) then rotates by the
+  // full orientation set (node, inclination, argument of periapsis). Frame-rate independent:
+  // the caller supplies an absolute simulation time, not a per-frame delta.
+  U.orbitPos = function (d, t, out) {
+    const Mn = d.M0 + U.TAU * t / d.P;
+    let E = Mn; for (let i = 0; i < 12; i++) { const f = E - d.ecc * Math.sin(E) - Mn, df = 1 - d.ecc * Math.cos(E); if (Math.abs(df) < 1e-12) break; E -= f / df; }
+    const x = d.a * (Math.cos(E) - d.ecc), y = d.a * Math.sqrt(1 - d.ecc * d.ecc) * Math.sin(E);
+    // rotate by argument of periapsis (omega) in the orbital plane
+    const co = Math.cos(d.omega), so = Math.sin(d.omega);
+    const xp = x * co - y * so, yp = x * so + y * co;
+    // rotate by inclination and longitude of ascending node
     const ci = Math.cos(d.inc), si = Math.sin(d.inc), cn = Math.cos(d.node), sn = Math.sin(d.node);
-    const x1 = x * cn - z * sn, z1 = x * sn + z * cn;
-    out[0] = x1; out[1] = z1 * si; out[2] = z1 * ci; return out;
+    const x1 = xp * cn - yp * sn * ci, z1 = xp * sn + yp * cn * ci, y1 = yp * si;
+    out[0] = x1; out[1] = y1; out[2] = z1; return out;
   };
 })(typeof window !== "undefined" ? window : globalThis);

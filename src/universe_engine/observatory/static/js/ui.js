@@ -23,7 +23,10 @@
     slider.addEventListener("input", () => { app.pause(); app.setS(slider.value / 1000); });
     play.addEventListener("click", () => (app.playing ? app.pause() : app.play()));
     app.on("play", (p) => { play.innerHTML = p ? "&#10074;&#10074;" : "&#9654;"; play.setAttribute("aria-label", p ? "Pause" : "Play"); });
-    $("btn-now").addEventListener("click", () => { app.setS(U.Cosmo.NOW_S); app.pause(); });
+    $("btn-now").addEventListener("click", () => { app.jumpToPresent(); });
+    $("btn-future").addEventListener("click", () => { app.jumpToFuture(0.5); });
+    $("btn-step-back").addEventListener("click", () => { app.stepBackward(); });
+    $("btn-step-fwd").addEventListener("click", () => { app.stepForward(); });
     document.querySelectorAll("#speed button").forEach((b) => b.addEventListener("click", () => {
       app.speed = parseFloat(b.dataset.s); document.querySelectorAll("#speed button").forEach((x) => x.classList.toggle("on", x === b));
     }));
@@ -95,8 +98,12 @@
         case "ArrowLeft": app.orbit(-14, 0); break; case "ArrowRight": app.orbit(14, 0); break;
         case "l": case "L": $("opt-labels").click(); break; case "o": case "O": $("opt-orbits").click(); break;
         case "f": case "F": if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); else document.exitFullscreen(); break;
+        case "p": case "P": app.surface(app.node); break;
+        case "c": case "C": { const m = ["orbit","follow","surface","free"], i = m.indexOf(app.modeOf()); app.modeOf(); const next = m[(i + 1) % m.length]; if (next === "follow" || next === "surface") app[next === "follow" ? "follow" : "surface"](app.node); else app[next === "free" ? "freeMode" : "orbitMode"](); } break;
         case "Escape": app.autopilot = null; menu.hidden = true; break;
         case "]": bumpSpeed(1); break; case "[": bumpSpeed(-1); break;
+        case ",": app.stepBackward(); break; case ".": app.stepForward(); break;
+        case "n": case "N": app.jumpToPresent(); break; case "j": case "J": app.jumpToFuture(0.5); break;
       }
     });
     function bumpSpeed(d) { const bs = [...document.querySelectorAll("#speed button")], i = bs.findIndex((b) => b.classList.contains("on")); const n = bs[U.clamp(i + d, 0, bs.length - 1)]; n.click(); }
