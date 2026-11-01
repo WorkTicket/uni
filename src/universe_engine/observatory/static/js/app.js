@@ -297,6 +297,62 @@
       else { await this.habitatFetch(hid); }
     }
 
+    // ---- persistent organism / Mind Inspector (PASS 3) ----
+    async organismListSaves() {
+      const r = await fetch("/api/organism/saves");
+      if (!r.ok) return [];
+      const j = await r.json();
+      return j && j.saves ? j.saves : [];
+    }
+    async organismCreate(body) {
+      const r = await fetch("/api/organism", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+      if (!r.ok) throw new Error("organism create failed: " + r.status);
+      const j = await r.json();
+      this.organismCache = this.organismCache || {};
+      if (j.id) this.organismCache[j.id] = j.state;
+      this.emit("organism-created", j);
+      return j;
+    }
+    async organismStep(oid, n) {
+      const r = await fetch("/api/organism/" + encodeURIComponent(oid) + "/step", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n: n || 1 }) });
+      if (!r.ok) throw new Error("organism step failed: " + r.status);
+      const j = await r.json();
+      this.organismCache = this.organismCache || {};
+      if (j.state) this.organismCache[j.id || oid] = j.state;
+      this.emit("organism-stepped", j);
+      return j;
+    }
+    async organismInspect(oid) {
+      const r = await fetch("/api/organism/" + encodeURIComponent(oid) + "/inspect");
+      if (!r.ok) return null;
+      const j = await r.json();
+      this.organismCache = this.organismCache || {};
+      this.organismCache[oid] = j;
+      this.emit("organism-inspected", j);
+      return j;
+    }
+    async organismCheckpoint(oid) {
+      const r = await fetch("/api/organism/" + encodeURIComponent(oid) + "/checkpoint", { method: "POST" });
+      if (!r.ok) throw new Error("organism checkpoint failed: " + r.status);
+      const j = await r.json();
+      this.emit("organism-checkpointed", j);
+      return j;
+    }
+    async organismSave(oid, id) {
+      const r = await fetch("/api/organism/" + encodeURIComponent(oid) + "/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!r.ok) throw new Error("organism save failed: " + r.status);
+      return await r.json();
+    }
+    async organismLoad(id, organismId) {
+      const r = await fetch("/api/organism/load", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, organism_id: organismId }) });
+      if (!r.ok) throw new Error("organism load failed: " + r.status);
+      const j = await r.json();
+      this.organismCache = this.organismCache || {};
+      if (j.id) this.organismCache[j.id] = j.state;
+      this.emit("organism-loaded", j);
+      return j;
+    }
+
     // ---- Scientific Simulation mode ------------------------------------------------
     // Renders the actual PM3D particle state from the backend API (SIMULATED),
     // distinct from the procedural Illustrative mode.

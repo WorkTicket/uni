@@ -96,6 +96,19 @@
       <button id="btn-back" class="pill secondary">Back</button>
       <div class="fine">WASD: move (free/surface) &middot; Shift: accelerate &middot; Esc: cancel autopilot</div>
     </div>
+
+    <div class="panel">
+      <h3>Living World &middot; Organisms</h3>
+      <div class="fine" style="margin-bottom:6px">Persistent organisms living in modeled habitats. Select one to open the Mind Inspector.</div>
+      <div id="org-list" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.25);margin-bottom:6px"></div>
+      <div class="row">
+        <button id="btn-org-refresh" class="pill secondary">Refresh</button>
+        <button id="btn-org-saves" class="pill secondary">Saved</button>
+        <button id="btn-org-create" class="pill accent">Create organism</button>
+      </div>
+      <div id="org-save-list" style="display:none;margin-top:6px;font-size:11px"></div>
+      <div class="fine" id="org-hint" style="margin-top:4px">Create an organism from the API or select a saved one.</div>
+    </div>
   </aside>
 
   <aside id="sidebar-right">
@@ -110,6 +123,15 @@
       <dl id="hab-rows"></dl>
       <div id="hab-actions" style="margin-top:8px"></div>
       <p id="hab-text" class="fine"></p>
+    </div>
+    <div class="panel" id="mind-inspector-panel" style="display:none">
+      <h3>Mind Inspector <span id="mind-oid" class="badge"></span></h3>
+      <div id="mind-status" class="fine"></div>
+      <dl id="mind-rows"></dl>
+      <div id="mind-memory" style="margin-top:8px"></div>
+      <div id="mind-actions" style="margin-top:8px"></div>
+      <div id="mind-controls" style="margin-top:8px"></div>
+      <p id="mind-text" class="fine"></p>
     </div>
   </aside>
 </div>
@@ -165,6 +187,7 @@
 <script src="js/catalog.js"></script>
 <script src="js/app.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/mind-inspector.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
