@@ -1,8 +1,8 @@
 {
  "project": "big-bang-universe",
- "current_phase": "R4 (1D complete) / R16 step 1 (1D observatory)",
- "phase_status": "R3_complete; R4_1D_complete; R4_3D_and_cosmological_terms_not_started; R16_step1_partial",
- "baseline_tests_unchanged": "24 original tests pass unmodified",
+ "current_phase": "Release A (scientific foundation) in progress; R4 3D PM cosmology verified; R16 step 1 (Scientific Simulation mode)",
+ "phase_status": "R3_complete; R4_1D_complete; R4_3D_PM_cosmology_verified; R16_scientific_mode_partial",
+ "baseline_tests_unchanged": "374 tests pass, 1 skipped (21 new: 11 coordinate transforms + 10 PM3D gravity)",
  "measured_findings": {
   "acoustic_mc_orders_64_to_1024": [
    1.87,
@@ -38,29 +38,30 @@
   "gravity_1d_gas": "implemented + verified T1",
   "nbody_1d_particles_cic": "implemented + verified T1 (Zel'dovich exact nonlinear, two-fluid Jeans, exact momentum exchange)",
   "observatory_1d": "server + viewer implemented; API/WebSocket/save-load verified; viewer script executed in Node against real snapshots but NEVER rendered in a browser",
-  "gravity_3d_pm": "pre-existing prototype only (T0/T1); not part of this verified work",
-  "cosmological_expansion_terms": "NOT started",
+  "gravity_3d_pm": "implemented + verified T1 (src/universe_engine/solvers/pm3d.py): 3D periodic particle-mesh gravity in comoving FLRW coordinates, KDK integration, proper time/position/peculiar velocity outputs, checkpoint/restore, 10 regression tests vs linear growth, uniform density zero-force, force symmetry, density mean zero",
+  "cosmological_expansion_terms": "implemented + verified (src/universe_engine/cosmos/coordinates.py): physical<->comoving coordinate transformations, peculiar velocity equation, density/momentum scaling, H(a) from FLRW, round-trip consistency tests; 11 regression tests",
   "thermochemistry_R5": "NOT started",
   "stars_galaxies_planets": "phenomenological catalogs (pre-existing), not simulated physics",
   "abiogenesis": "NOT SOLVED and not attempted; milestones C-H (prebiotic organisation, evolution, ecosystems, multiscale experience, autonomous research, final verification) not started",
-  "observatory_3d_R16": "NOT started",
+  "observatory_3d_R16": "partial: Scientific Simulation mode added (renders actual PM3D particle state from API, labeled SIMULATED), distinct from Illustrative (procedural) mode; /api/pm3d create/step/get endpoints; frontend mode toggle and render layer",
   "planetary_environment_milestone_A": "implemented (src/universe_engine/planet): 1D latitudinal energy-balance climate with ice-albedo feedback, stellar brightening, carbonate-silicate CO2 cycle, water phase, carbonate pH, radiogenic heat; 17 tests; Earth-tuned parameterisations, NOT predictive for other worlds; no life created",
   "chemistry_network_milestone_B": "implemented (src/universe_engine/chemistry): element/charge-checked mass-action networks, thermodynamically consistent reversibility, T/pH-dependent rates, Radau ODE + Gillespie SSA, planet-environment coupling; 10 tests vs analytic solutions; rate parameters in tests are ILLUSTRATIVE, not measurements; no reaction database yet",
-  "viewer_3d": "procedural WebGL2 viewer (static/js); NOT coupled to the physics engine or to planet/chemistry state; rendered only in headless Chromium/SwiftShader",
+  "viewer_3d": "procedural WebGL2 viewer (static/js); now has Scientific Simulation mode coupled to PM3D state via /api/pm3d; Illustrative mode remains NOT coupled to the physics engine or to planet/chemistry state; rendered only in headless Chromium/SwiftShader",
   "prebiotic_milestone_C": "partially implemented (src/universe_engine/prebiotic): polymer growth/hydrolysis with sourced bond dG (secondary source) + wet/dry cycling, RAF sets + random polymer model, osmotic vesicle protocells (division/lysis); 14 tests; kinetics and vesicle parameters are ASSUMED placeholders; protocell contents not yet coupled to chemistry networks",
   "replicators_milestone_D": "implemented (src/universe_engine/replicators): supplied template-copying with explicit error rate, exact monomer accounting, Gillespie + tau-leap, lineage tree, duplex-stability mechanism (placeholder parameters) giving temperature-dependent selection; 9 tests incl. quasispecies/error-threshold theory; not coupled to protocells or chemistry networks"
  },
- "scientific_limitations": [
-  "All verified solvers are 1D, periodic and dimensionless.",
-  "No cosmological expansion (comoving) terms, thermochemistry, radiative transfer, stars, galaxies, planets, or life are simulated.",
-  "Beyond shell crossing / strong nonlinearity only conservation is checked, not accuracy (energy drift reaches ~4e-3); the observatory warns when drift > 1e-3.",
-  "Positivity-recovery paths verified only by fault injection.",
-  "Error tolerances are regression guards (~1.5x measured), not independent accuracy proofs.",
-  "Pause/checkpoint is bitwise only on step boundaries (observatory enforces this).",
-  "The browser viewer has not been rendered or clicked in a real browser in this environment; only its code was executed in Node against real data.",
-  "CI workflow written but never executed; no Windows run performed.",
-  "Old physical_models.gas_step demo unchanged and unverified."
- ],
+  "scientific_limitations": [
+    "All verified solvers except PM3D are 1D, periodic and dimensionless. PM3D is 3D but uses comoving box-fraction coordinates (code units), not physical SI.",
+    "No thermochemistry, radiative transfer, stars, galaxies, planets, or life are simulated.",
+    "Beyond shell crossing / strong nonlinearity only conservation is checked, not accuracy (energy drift reaches ~4e-3); the observatory warns when drift > 1e-3.",
+    "Positivity-recovery paths verified only by fault injection.",
+    "Error tolerances are regression guards (~1.5x measured), not independent accuracy proofs.",
+    "Pause/checkpoint is bitwise only on step boundaries (observatory enforces this).",
+    "The browser viewer has not been rendered or clicked in a real browser in this environment; only its code was executed in Node against real data.",
+    "CI workflow written but never executed; no Windows run performed.",
+    "Old physical_models.gas_step demo unchanged and unverified.",
+    "PM3D uses a synthetic Gaussian initial field (not a Boltzmann transfer function); linear-growth validation is approximate (30% tolerance) due to CIC and particle noise."
+  ],
  "preserved_work": {
   "package_baseline_commit": "d66eef7",
   "original_project": "audited separately, untouched (36/36 tests pass); docs/AUDIT_ORIGINAL_BIG_BANG_UNIVERSE.md"
@@ -72,6 +73,6 @@
   "doctor": "universe doctor",
   "regenerate_status": "python scripts/write_status.py"
  },
- "next_action": "Milestone E: couple replicators to protocell compartments and to environment (planet T, resources), ecological feedback on resource pools, extinction/adaptation experiments with multiple seeds; then F (connect viewer to simulated state).",
- "next_phase": "R4b then R5"
+  "next_action": "Release A: validate 3D PM cosmology against linear-growth benchmarks (done), connect observatory Scientific mode to live PM3D state (done), then T04: ingest CLASS/CAMB transfer functions for physical initial conditions. Next phase: R4b (validated 3D cosmological gravity) then R5 (thermochemistry).",
+  "next_phase": "R4b (3D cosmological gravity with transfer-function ICs) then R5"
 }

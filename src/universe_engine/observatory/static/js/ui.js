@@ -24,8 +24,6 @@
     slider.addEventListener("input", () => { app.pause(); app.setS(slider.value / 1000); });
     play.addEventListener("click", () => (app.playing ? app.pause() : app.play()));
     app.on("play", (p) => { play.innerHTML = p ? "&#10074;&#10074;" : "&#9654;"; play.setAttribute("aria-label", p ? "Pause" : "Play"); });
-    $("btn-now").addEventListener("click", () => { app.jumpToPresent(); });
-    $("btn-future").addEventListener("click", () => { app.jumpToFuture(0.5); });
     $("btn-step-back").addEventListener("click", () => { app.stepBackward(); });
     $("btn-step-fwd").addEventListener("click", () => { app.stepForward(); });
     document.querySelectorAll("#speed button").forEach((b) => b.addEventListener("click", () => {
@@ -43,6 +41,31 @@
     document.querySelectorAll("#quality button").forEach((b) => b.addEventListener("click", () => {
       document.querySelectorAll("#quality button").forEach((x) => x.classList.toggle("on", x === b)); app.pendingQuality = b.dataset.q;
     }));
+    // View mode: Illustrative (procedural) vs Scientific Simulation (actual PM3D state)
+    document.querySelectorAll("#view-mode button").forEach((b) => b.addEventListener("click", () => {
+      document.querySelectorAll("#view-mode button").forEach((x) => x.classList.toggle("on", x === b));
+      app.setScientific(b.dataset.m === "scientific");
+    }));
+    // PM3D simulation controls
+    const pm3dStatus = $("pm3d-status");
+    $("btn-pm3d-create").addEventListener("click", async () => {
+      const seed = parseInt($("pm3d-seed").value, 10) || 42;
+      try {
+        pm3dStatus.textContent = "Creating PM3D simulation…";
+        await app.pm3dCreate("sim-1", seed, 16, 8, 0.2, 2.0, 0.02);
+        pm3dStatus.textContent = "PM3D sim at a=" + app.pm3dState.a.toFixed(3) + " (z=" + app.pm3dState.z.toFixed(2) + ", t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr)";
+        app.setScientific(true);
+        document.querySelectorAll("#view-mode button").forEach((x) => x.classList.toggle("on", x.dataset.m === "scientific"));
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
+    $("btn-pm3d-step").addEventListener("click", async () => {
+      if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
+      try {
+        pm3dStatus.textContent = "Advancing simulation…";
+        await app.pm3dStep(2.0, 0.02);
+        pm3dStatus.textContent = "PM3D sim at a=" + app.pm3dState.a.toFixed(3) + " (z=" + app.pm3dState.z.toFixed(2) + ", t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr)";
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
     $("btn-rand").addEventListener("click", () => { $("seed").value = Math.floor(Math.random() * 1e9); });
     $("btn-new").addEventListener("click", async () => {
       menu.hidden = true; const wasPlaying = app.playing; app.pause();
@@ -112,7 +135,7 @@
         case "Escape": app.autopilot = null; menu.hidden = true; break;
         case "]": bumpSpeed(1); break; case "[": bumpSpeed(-1); break;
         case ",": app.stepBackward(); break; case ".": app.stepForward(); break;
-        case "n": case "N": app.jumpToPresent(); break; case "j": case "J": app.jumpToFuture(0.5); break;
+        case "n": case "N": app.jumpToFuture(0.5); break; case "j": case "J": app.jumpToFuture(0.5); break;
       }
     });
     function bumpSpeed(d) { const bs = [...document.querySelectorAll("#speed button")], i = bs.findIndex((b) => b.classList.contains("on")); const n = bs[U.clamp(i + d, 0, bs.length - 1)]; n.click(); }

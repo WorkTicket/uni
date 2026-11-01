@@ -64,4 +64,23 @@
   in vec3 aPos; uniform float uScale; uniform vec3 uCenter;
   void main(){ vec3 rel = (aPos*uScale + uCenter - uCamHi) - uCamLo; gl_Position = toClip(rel); }`;
   U.SH.lineFS = PRE + `uniform vec4 uColor; out vec4 o; void main(){ o = uColor; }`;
+
+  // ----- scientific simulation particles (actual PM3D state) -------------------
+  // Positions are comoving box fractions [0,1); proper position = a * pos * boxMpc.
+  U.SH.simPointVS = PRE + COMMON + `
+  in vec3 aPos;
+  uniform float uA, uBox, uFade, uTime, uSize;
+  out vec3 vCol;
+  void main(){
+    vec3 pos = (aPos - 0.5) * uBox * uA;   // proper position (comoving * scale factor)
+    vec3 rel = (pos - uCamHi) - uCamLo;
+    gl_Position = toClip(rel);
+    float px = uSize * uPxScale / max(-gl_Position.w, 1e-9);
+    gl_PointSize = clamp(px, 1.0, 48.0);
+    float edge = smoothstep(0.0, 0.02, min(min(aPos.x,1.0-aPos.x), min(min(aPos.y,1.0-aPos.y), min(aPos.z,1.0-aPos.z))));
+    vCol = vec3(0.25, 0.75, 1.0) * (0.5 + 0.5 * edge) * uFade;
+  }`;
+  U.SH.simPointFS = PRE + `
+  in vec3 vCol; out vec4 o;
+  void main(){ vec2 d = gl_PointCoord*2.0-1.0; float r2 = dot(d,d); if(r2>1.0) discard; o = vec4(vCol*exp(-2.0*r2), 1.0); }`;
 })(typeof window !== "undefined" ? window : globalThis);

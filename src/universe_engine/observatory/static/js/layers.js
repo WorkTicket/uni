@@ -64,5 +64,49 @@
     }
   }
 
-  U.Layers = { WebLayer };
+  // ------------------------------------------------------------------
+  // ScientificParticleLayer: renders actual PM3D particle positions from the
+  // numerical simulation state (SIMULATED classification, not illustrative).
+  // Positions are comoving box fractions; the shader scales by a to get proper.
+  // ------------------------------------------------------------------
+  class ScientificParticleLayer {
+    constructor(R) {
+      this.R = R; const gl = R.gl;
+      this.prog = new U.GL.Program(gl, U.SH.simPointVS, U.SH.simPointFS, "sim-points");
+      this.vao = gl.createVertexArray(); this.buf = null; this.count = 0;
+      this.boxMpc = 100; this.a = 1;
+      gl.bindVertexArray(this.vao);
+      const la = this.prog.attrib("aPos"); gl.enableVertexAttribArray(la);
+      gl.vertexAttribPointer(la, 3, gl.FLOAT, false, 0, 0);
+    }
+    upload(state) {
+      const gl = this.R.gl;
+      const x = state.x_comoving;      // (N,3) box fraction
+      const n = x.length;
+      const data = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        data[i * 3] = x[i][0]; data[i * 3 + 1] = x[i][1]; data[i * 3 + 2] = x[i][2];
+      }
+      gl.bindVertexArray(this.vao);
+      if (this.buf) gl.deleteBuffer(this.buf);
+      this.buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      const la = this.prog.attrib("aPos"); gl.enableVertexAttribArray(la);
+      gl.vertexAttribPointer(la, 3, gl.FLOAT, false, 0, 0);
+      this.count = n;
+      this.boxMpc = 100;  // reference box, from config
+      this.a = state.a;
+    }
+    draw(ctx, fade) {
+      if (!this.count || fade <= 0.001) return;
+      const gl = this.R.gl, p = this.prog.use();
+      setCam(p, ctx, ctx.camMpc);
+      p.f1("uA", this.a).f1("uBox", this.boxMpc).f1("uFade", fade)
+        .f1("uTime", ctx.time).f1("uSize", 2.0);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      gl.bindVertexArray(this.vao); gl.drawArrays(gl.POINTS, 0, this.count);
+    }
+  }
+
+  U.Layers = { WebLayer, ScientificParticleLayer };
 })(typeof window !== "undefined" ? window : globalThis);

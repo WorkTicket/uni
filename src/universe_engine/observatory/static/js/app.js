@@ -20,9 +20,9 @@
       this.web = new U.Layers.WebLayer(this.R); this.sprites = new U.Layers.GalaxySprites(this.R);
       this.stars = new U.Layers.GalaxyStars(this.R); this.system = new U.Layers.SystemLayer(this.R);
       this.chem = new U.Layers.ChemicalFieldLayer(this.R);
+      this.simParticles = new U.Layers.ScientificParticleLayer(this.R);
       this.quality = this.opts.quality || "medium";       this.seed = 1; this.uni = null;
-      this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.stopAtNow = false; this.reachedNow = false;
-      this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
+      this.s = 0; this.t = U.Cosmo.tOfS(0); this.playing = false; this.speed = 1; this.time = 0; this.spin = 0; this.sysClk = 0; this.spinClk = 0; this.userRate = 1;
       this.node = null; this.pos = [0, 0, 0]; this.q = Q.ident(); this.zoomAcc = 0; this.recenter = 0;
       this.mouse = { x: 0.5, y: 0.5, inside: false }; this.hover = null; this.lastPick = 0;
       this.exposure = 1; this.bloom = 0.38; this.autopilot = null; this.listeners = {};
@@ -32,6 +32,9 @@
       this.freeYaw = 0; this.freePitch = 0; this.freeVel = [0, 0, 0]; this.freeSpeed = 20; // free-flight state
       this.simEnvs = null;           // planet index -> {liqW, atmOk} from the habitat simulation
       this.micro = false;            // microscopic/chemical-field view mode
+      this.scientific = false;       // Scientific Simulation mode: renders actual PM3D state
+      this.pm3dState = null;         // latest PM3D snapshot from the API
+      this.pm3dId = null;
       this.resize();
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
@@ -65,7 +68,7 @@
     lookQ(from, to) { return Q.lookAt(V.sub(to, from), [0, 1, 0]); }
 
     // ---- time ------------------------------------------------------------------------------------------
-    setS(s) { this.s = U.clamp(s, 0, 1); this.t = U.Cosmo.tOfS(this.s); if (this.s < U.Cosmo.NOW_S - 1e-4) this.reachedNow = false; }
+    setS(s) { this.s = U.clamp(s, 0, 1); this.t = U.Cosmo.tOfS(this.s); }
     setT(t) { this.setS(U.Cosmo.sOfT(t)); this.t = t; }
     play() { this.playing = true; this.emit("play", true); }
     pause() { this.playing = false; this.emit("play", false); }
@@ -73,7 +76,7 @@
     // ---- timeline control ----
     stepForward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s + dt / TOTAL_SECONDS, 0, 1)); }
     stepBackward(dt = 0.05) { this.pause(); this.setS(U.clamp(this.s - dt / TOTAL_SECONDS, 0, 1)); }
-    jumpToPresent() { this.pause(); this.setS(U.Cosmo.NOW_S); this.reachedNow = false; }
+    jumpToPresent() { this.pause(); this.setS(U.Cosmo.NOW_S); }
     jumpToFuture(fraction = 0.5) { this.pause(); const f = U.clamp(fraction, 0, 1); this.setS(U.Cosmo.NOW_S + f * (1 - U.Cosmo.NOW_S)); }
     setSpeed(speed) { this.speed = speed; }
 
@@ -131,6 +134,49 @@
     freeLook(dx, dy) { this.freeYaw += dx * 0.004; this.freePitch = U.clamp((this.freePitch || 0) + dy * 0.004, -1.45, 1.45); this.q = Q.mul(Q.axisAngle([0, 1, 0], this.freeYaw), Q.axisAngle([1, 0, 0], this.freePitch)); this.recenter = 0; }
     microMode(on) { this.micro = !!on; }
     setSimEnvs(envs) { this.simEnvs = envs || null; this.emit("sim-envs", envs); }
+
+    // ---- Scientific Simulation mode ------------------------------------------------
+    // Renders the actual PM3D particle state from the backend API (SIMULATED),
+    // distinct from the procedural Illustrative mode.
+    setScientific(on) { this.scientific = !!on; this.emit("mode-changed", this.scientific ? "scientific" : "illustrative"); }
+    isScientific() { return this.scientific; }
+
+    async pm3dCreate(id, seed, nMesh, nPPax, aStart, aEnd, amplitude) {
+      const body = { id, seed, n_mesh: nMesh, n_particles_per_axis: nPPax,
+                     a_start: aStart, a_end: aEnd, amplitude };
+      const r = await fetch("/api/pm3d", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("pm3d create failed: " + r.status);
+      const j = await r.json();
+      this.pm3dId = id;
+      this.pm3dState = j.state;
+      this.simParticles.upload(this.pm3dState);
+      this.emit("pm3d-created", j);
+      return j;
+    }
+
+    async pm3dStep(aEnd, maxDlnA) {
+      if (!this.pm3dId) return null;
+      const body = { a_end: aEnd, max_d_ln_a: maxDlnA };
+      const r = await fetch("/api/pm3d/" + this.pm3dId + "/step", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("pm3d step failed: " + r.status);
+      const j = await r.json();
+      this.pm3dState = j.state;
+      this.simParticles.upload(this.pm3dState);
+      this.t = this.pm3dState.t;
+      this.s = U.Cosmo.sOfT(this.t);
+      this.emit("pm3d-stepped", j);
+      return j;
+    }
+
+    async pm3dGet() {
+      if (!this.pm3dId) return null;
+      const r = await fetch("/api/pm3d/" + this.pm3dId);
+      if (!r.ok) return null;
+      const j = await r.json();
+      this.pm3dState = j.state;
+      this.simParticles.upload(this.pm3dState);
+      return j;
+    }
     modeOf() { return this.camMode; }
 
     // ---- camera transitions (spec: resolve position -> bounding radius -> framing distance -> interpolate) ----
@@ -295,8 +341,7 @@
       // cosmic clock
       if (this.playing) {
         this.setS(this.s + dt * this.speed / TOTAL_SECONDS);
-        if (this.stopAtNow && this.s >= U.Cosmo.NOW_S) { this.s = U.Cosmo.NOW_S; this.t = U.Cosmo.tOfS(U.Cosmo.NOW_S); this.pause(); this.emit("at-now"); }
-        else if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
+        if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
       }
       // local clocks (decoupled from cosmic time so planets and spiral arms move at a watchable pace)
       const kind = this.node.kind, ur = this.userRate;
@@ -436,6 +481,12 @@
         webPlasmaGain: 0.012 * U.mix(1, 0.5, U.smooth(0.9, 2.6, dRel)), webGasGain: 0.0065 * dim, webSize: 0.55 };
       const iH = chain.findIndex((n) => n.kind === "halo"), iG = chain.findIndex((n) => n.kind === "galaxy"), iS = chain.findIndex((n) => n.kind === "star");
       this.post.scene.bind(); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.disable(gl.DEPTH_TEST);
+      // --- Scientific Simulation mode: render actual PM3D particle state, not the procedural web
+      if (this.scientific && this.pm3dState) {
+        const camU = cams[0], camMpc = [camU[0] / MPC, camU[1] / MPC, camU[2] / MPC]; ctx.camMpc = camMpc;
+        this.simParticles.draw(ctx, 1.0);
+        return;
+      }
       // --- universe frame
       const camU = cams[0], camMpc = [camU[0] / MPC, camU[1] / MPC, camU[2] / MPC]; ctx.camMpc = camMpc;
       let webFade = 1, skipMul = 1, skip = -1, grpFade = 0, halo = iH >= 0 ? chain[iH] : null;

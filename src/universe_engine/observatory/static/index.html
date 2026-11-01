@@ -35,6 +35,11 @@
   <h4>About this model</h4>
   <p class="fine">Cosmic expansion and linear growth use the engine's flat &Lambda;CDM background. The web is a truncated Zel'dovich approximation, not an N-body run. Galaxies, stars and planets are procedurally generated from the seed. Early-universe visuals are schematic, with contrast exaggerated — they do not represent solved Planck-era physics. The timeline extends into the future beyond today.</p>
   <p class="fine">Scientific fidelity: SIMULATED (FLRW background), DERIVED (Zel'dovich structure, Keplerian orbits), ILLUSTRATIVE (galaxies, stars, planets, black holes). <a href="/research-lab" style="color:var(--accent, #58a6ff)">Open Research Laboratory &rarr;</a> — run evolution experiments, track populations, lineage and extinction.</p>
+  <h4>View mode</h4>
+  <div class="seg" id="view-mode"><button data-m="illustrative" class="on">Illustrative (procedural)</button><button data-m="scientific">Scientific Simulation (PM3D)</button></div>
+  <h4>Scientific Simulation</h4>
+  <div class="row"><input id="pm3d-seed" type="number" value="42"><button id="btn-pm3d-create" class="pill">Create PM3D sim</button><button id="btn-pm3d-step" class="pill">Advance a→2.0</button></div>
+  <p class="fine" id="pm3d-status" style="font-size:0.75em;opacity:0.7">No simulation loaded.</p>
 </aside>
 
 <aside id="info" class="glass">
@@ -48,10 +53,9 @@
 
 <footer id="dock" class="glass">
   <button id="btn-play" class="play" title="Play / pause (Space)" aria-label="Play">&#9654;</button>
-  <button id="btn-step-back" class="pill" title="Step backward (,)" aria-label="Step backward">&#9666;</button>
-  <button id="btn-step-fwd" class="pill" title="Step forward (.)" aria-label="Step forward">&#9656;</button>
-  <button id="btn-now" class="pill" title="Jump to present (N)">Present</button>
-  <button id="btn-future" class="pill accent" title="Jump to far future (J)">Future</button>
+    <button id="btn-step-back" class="pill" title="Step backward (,)" aria-label="Step backward">&#9666;</button>
+    <button id="btn-step-fwd" class="pill" title="Step forward (.)" aria-label="Step forward">&#9656;</button>
+    <button id="btn-future" class="pill accent" title="Jump to far future (J)">Future</button>
   <div class="clock">
     <div id="t-main">0</div>
     <div class="sub"><span id="t-epoch"></span></div>

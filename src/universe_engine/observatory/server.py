@@ -9,6 +9,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict
 
+import numpy as np
+
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +32,7 @@ from ..frontier.compact_dimensions import (
 )
 from ..frontier.planck_scale import PLANCK_LAYER, PlanckUnits
 from ..frontier.brane_world import BraneWorldModel, BraneWorldParameters
+from ..solvers.pm3d import Cosmology, ParticleMesh3D
 
 STATIC = Path(__file__).parent / "static"
 MAX_STEPS_PER_REQUEST = 10_000
@@ -37,6 +40,33 @@ DEFAULT_COSMOLOGY = {"H0_km_s_Mpc": 67.4, "Omega_m": 0.315, "Omega_r": 0.000092,
 SAVE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 UNIVERSE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 HABITAT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _pm3d_lattice(n_ppax: int, seed: int, amplitude: float):
+    """Particles on a perturbed lattice for PM3D initial conditions."""
+    rng = np.random.default_rng(seed)
+    n = n_ppax
+    grid = np.stack(np.meshgrid(
+        *([np.arange(n) / n + 0.5 / n] * 3), indexing="ij"), -1).reshape(-1, 3)
+    if amplitude > 0:
+        grid = grid + amplitude * rng.normal(size=grid.shape)
+        grid = grid % 1.0
+    mass = np.full(grid.shape[0], 1.0 / grid.shape[0])
+    return grid, mass
+
+
+def _pm3d_snapshot_json(sim) -> dict:
+    """Convert a PM3D snapshot to JSON-safe form (numpy arrays -> lists)."""
+    s = sim.snapshot()
+    out = {}
+    for k, v in s.items():
+        if isinstance(v, np.ndarray):
+            out[k] = v.tolist()
+        elif isinstance(v, (np.floating, np.integer)):
+            out[k] = float(v)
+        else:
+            out[k] = v
+    return out
 
 
 def load_cosmology():
@@ -63,6 +93,8 @@ def create_app(save_dir="runs/observatory"):
     multiverse = MultiverseManager(save_root.parent / "multiverse")
     research_lab = ResearchLab(save_root.parent / "research_lab")
     habitat_holder: Dict[str, Habitat] = {}
+    # Scientific 3D PM3D cosmology simulation (actual numerical state, not procedural).
+    pm3d_holder: Dict[str, ParticleMesh3D] = {}
 
     @app.exception_handler(ParamError)
     async def _param_error(request, exc):
@@ -601,6 +633,86 @@ def create_app(save_dir="runs/observatory"):
             } for p in h.patches],
             "mass_ledger_error": h._ledger_error,
         }
+
+    # ---- scientific 3D PM3D cosmology simulation (actual numerical state) ----
+    PM3D_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+    @app.post("/api/pm3d")
+    def pm3d_create(body: dict = Body(default={})):
+        """Create a 3D particle-mesh cosmology simulation from actual numerical state.
+
+        Body: { "id": str, "seed": int, "n_mesh": int, "n_particles_per_axis": int,
+                "a_start": float, "a_end": float, "amplitude": float }
+        The simulation evolves cold dark matter under comoving PM gravity in an
+        expanding FLRW background. State is the authoritative numerical result;
+        the renderer displays it without fabricating structure.
+        """
+        sid = body.get("id") or time.strftime("pm3d-%Y%m%dT%H%M%S")
+        if not PM3D_ID.match(str(sid)):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        if sid in pm3d_holder:
+            raise ParamError(f"pm3d simulation {sid!r} already exists")
+        seed = int(body.get("seed", 42))
+        n_mesh = int(body.get("n_mesh", 16))
+        n_ppax = int(body.get("n_particles_per_axis", 8))
+        a_start = float(body.get("a_start", 0.2))
+        a_end = float(body.get("a_end", 2.0))
+        amplitude = float(body.get("amplitude", 0.02))
+        if not (8 <= n_mesh <= 64):
+            raise ParamError("n_mesh must be in [8, 64]")
+        if not (2 <= n_ppax <= 16):
+            raise ParamError("n_particles_per_axis must be in [2, 16]")
+        if not (0 < a_start < a_end):
+            raise ParamError("require 0 < a_start < a_end")
+        if not (0 < amplitude <= 0.3):
+            raise ParamError("amplitude must be in (0, 0.3]")
+        cosmo = Cosmology(H0_km_s_Mpc=67.4, Omega_m=0.315, Omega_r=9.2e-5,
+                          Omega_Lambda=0.684908)
+        x, m = _pm3d_lattice(n_ppax, seed, amplitude)
+        sim = ParticleMesh3D(n=n_mesh, x=x, u=np.zeros_like(x), mass=m,
+                             cosmology=cosmo, a=a_start)
+        # t(a) is initialized in the constructor via the background integral.
+        pm3d_holder[sid] = sim
+        return {"id": sid, "state": _pm3d_snapshot_json(sim), "classification": "SIMULATED"}
+
+    @app.get("/api/pm3d/{sid}")
+    def pm3d_get(sid: str):
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        return {"id": sid, "state": _pm3d_snapshot_json(pm3d_holder[sid]),
+                "classification": "SIMULATED"}
+
+    @app.post("/api/pm3d/{sid}/step")
+    def pm3d_step(sid: str, body: dict = Body(default={})):
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        a_end = float(body.get("a_end", pm3d_holder[sid].a * 1.1))
+        max_d_ln_a = float(body.get("max_d_ln_a", 0.01))
+        result = pm3d_holder[sid].run_to_a(a_end, max_d_ln_a=max_d_ln_a)
+        return {"id": sid, "state": _pm3d_snapshot_json(pm3d_holder[sid]),
+                "classification": "SIMULATED", "result": result}
+
+    @app.post("/api/pm3d/{sid}/reset")
+    def pm3d_reset(sid: str, body: dict = Body(default={})):
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        a_start = float(body.get("a_start", 0.2))
+        amplitude = float(body.get("amplitude", 0.02))
+        seed = int(body.get("seed", pm3d_holder[sid].mass.size and 42))
+        cosmo = Cosmology(H0_km_s_Mpc=67.4, Omega_m=0.315, Omega_r=9.2e-5,
+                          Omega_Lambda=0.684908)
+        x, m = _pm3d_lattice(int(pm3d_holder[sid].n_mesh ** (1 / 3)), seed, amplitude)
+        sim = ParticleMesh3D(n=pm3d_holder[sid].n_mesh, x=x, u=np.zeros_like(x),
+                             mass=m, cosmology=cosmo, a=a_start)
+        # t(a) is initialized in the constructor via the background integral.
+        pm3d_holder[sid] = sim
+        return {"id": sid, "state": _pm3d_snapshot_json(sim), "classification": "SIMULATED"}
 
     app.mount("/js", StaticFiles(directory=STATIC / "js"), name="js")
     app.mount("/css", StaticFiles(directory=STATIC / "css"), name="css")
