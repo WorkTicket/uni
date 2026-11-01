@@ -1,8 +1,8 @@
 {
   "project": "big-bang-universe",
   "current_phase": "Release B (physically calibrated 3D cosmology) in progress",
-  "phase_status": "R3_complete; R4_1D_complete; R4_3D_PM_cosmology_verified; R4_3D_physical_units; R4b_integration_validated; R16_scientific_mode_playback; multiverse_pm3d_integrated",
-  "baseline_tests_unchanged": "389 tests pass, 1 skipped (15 new: 6 PM3D integration convergence + 9 diagnostics)",
+  "phase_status": "R3_complete; R4_1D_complete; R4_3D_PM_cosmology_verified; R4_3D_physical_units; R4b_integration_validated; R16_scientific_mode_playback; multiverse_pm3d_integrated; R16_playback_camera_repaired; R16_cohesive_ui; habitat_inspector_integrated",
+  "baseline_tests_unchanged": "396 tests pass, 1 skipped (15 new: 6 PM3D integration convergence + 9 diagnostics + 7 cosmo-clock)",
   "measured_findings": {
     "acoustic_mc_orders_64_to_1024": [1.87, 1.95, 1.96, 1.97],
     "jeans_unstable_orders": [2.21, 2.1, 2.05],
@@ -68,15 +68,15 @@
     "doctor": "universe doctor",
     "regenerate_status": "python scripts/write_status.py"
   },
-  "next_action": "Release B core implemented: physical units, validated ICs, integration convergence, diagnostics, live observatory playback, multiverse PM3D. Remaining: real-browser observatory validation (Task 8) and final commit (Task 10).",
+  "next_action": "Release B core implemented plus observatory playback/camera repair and cohesive UI. Remaining: PASS 7 end-to-end verification (real-browser automation, desktop Windows app, frame-time measurement, screenshots), then final commit.",
   "next_phase": "Hydrodynamics and halo formation (post-Release B)",
   "updated_utc": "2026-11-01T09:45:00+00:00",
   "repo_revision_at_generation": "feature/release-b-calibrated-cosmology (dc2fd34 base)",
   "test_command": "python -m pytest -q",
   "test_counts": {
-    "passed": 389,
+    "passed": 396,
     "failed": 0,
     "skipped": 1
   },
-  "test_summary_line": "389 passed, 1 skipped, 1 warning"
+  "test_summary_line": "396 passed, 1 skipped, 1 warning"
 }

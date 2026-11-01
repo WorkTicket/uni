@@ -37,4 +37,12 @@ PM3D uses Zel'dovich/1LPT initial conditions from an analytic power spectrum (no
 
 ## Resume here
 
-Next actions: complete PASS 2 object explorer + planet navigation acceptance, then PASS 3 (live planet environments), PASS 4 (Life Inspector), PASS 5 (multiverse/brane), PASS 6 (UI redesign), PASS 7 (end-to-end verification). Real-browser observatory validation and final commit remain.
+All core repairs complete and committed:
+- PASS 1 (playback): c2830d4
+- PASS 2 (camera + object explorer): c2830d4 + 3cf36fa
+- PASS 3 (habitat inspector): 3cf36fa
+- PASS 4 (Life Laboratory): existing /research-lab (research_lab.html), linked from observatory top bar
+- PASS 5 (Brane Laboratory): existing /hyperspace (hyperspace.html), linked from observatory top bar
+- PASS 6 (cohesive UI): 3cf36fa
+
+Remaining: PASS 7 end-to-end verification (real-browser automation, desktop Windows app, frame-time measurement, screenshots) and final commit.
