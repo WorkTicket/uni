@@ -71,9 +71,17 @@ class DelayedCueTask:
         return self._observe()
 
     def _observe(self) -> SensoryObservation:
-        # Sensory channels: cue_visible (0/1), cue_side_if_visible (0/1/-1),
-        # phase (one-hot-ish), position (agent always at 0 for this abstract task)
-        cue_side_obs = float(self.cue_side) if self.cue_visible else -1.0
+        # Sensory channels: cue side encoded in nearby_resources during
+        # visibility (1.0=right, 0.0=left) and neutral (0.5) while hidden.
+        # local_light = 1.0 while the cue is visible (informative phase), 0.0
+        # during the delay/response (memory phase), so the agent must remember
+        # the cue side across the delay. phase carried in extra.
+        if self.cue_visible:
+            nearby_resources = 1.0 if self.cue_side == 1 else 0.0
+            local_light = 1.0
+        else:
+            nearby_resources = 0.5  # neutral: no cue information available
+            local_light = 0.0
         extra = {
             "cue_side": self.cue_side,
             "cue_visible": self.cue_visible,
@@ -86,8 +94,8 @@ class DelayedCueTask:
             energy_level=1.0,
             nutrient_level=1.0,
             local_temperature=288.0,
-            local_light=1.0,
-            nearby_resources=1.0 if self.cue_visible else 0.0,
+            local_light=local_light,
+            nearby_resources=nearby_resources,
             nearby_hazards=0.0,
             nearby_agents=0,
             social_signals=[],
@@ -205,14 +213,24 @@ class OccludedTargetTask:
             "phase": self.phase,
             "correct_target": self.target_pos,
         }
-        tx, ty = (self.target_pos if self.target_visible else self.agent_pos)
+        # Encode target position in nearby_resources (x) and nearby_hazards (y)
+        # while visible; during occlusion report the agent's own x/y (neutral
+        # w.r.t. target), so the agent must remember the target location from
+        # the visible period. local_light = 1.0 while the target is visible,
+        # 0.0 while occluded (memory phase).
+        if self.target_visible:
+            tx, ty = self.target_pos
+            local_light = 1.0
+        else:
+            tx, ty = self.agent_pos
+            local_light = 0.0
         return SensoryObservation(
             time=float(self.t),
             position=(float(self.agent_pos[0]), float(self.agent_pos[1])),
             energy_level=1.0,
             nutrient_level=1.0,
             local_temperature=288.0,
-            local_light=1.0,
+            local_light=local_light,
             nearby_resources=float(tx) / max(1, self.cfg.grid - 1),
             nearby_hazards=float(ty) / max(1, self.cfg.grid - 1),
             nearby_agents=0,

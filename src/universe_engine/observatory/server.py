@@ -23,6 +23,9 @@ from .research_lab import ResearchLab, ResearchLabError
 from ..habitat import Habitat, make_default_network
 from ..planet.model import Planet, PlanetSpec
 from ..core.clocks import FLWRCosmology
+from ..research.persistent_organism import (
+    PersistentOrganism, make_default_habitat, make_organism,
+)
 from ..geometry.geometry_core import (
     flat_minkowski_4d, flat_minkowski_5d, circle_compactification,
     GeometrySpec,
@@ -129,6 +132,7 @@ def create_app(save_dir="runs/observatory"):
     multiverse = MultiverseManager(save_root.parent / "multiverse")
     research_lab = ResearchLab(save_root.parent / "research_lab")
     habitat_holder: Dict[str, Habitat] = {}
+    organism_holder: Dict[str, PersistentOrganism] = {}
     # Scientific 3D PM3D cosmology simulation (actual numerical state, not procedural).
     pm3d_holder: Dict[str, ParticleMesh3D] = {}
     pm3d_playback: Dict[str, dict] = {}
@@ -705,6 +709,86 @@ def create_app(save_dir="runs/observatory"):
             } for p in h.patches],
             "mass_ledger_error": h._ledger_error,
         }
+
+    # ---- persistent organism + Mind Inspector ----
+    ORGANISM_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+    @app.post("/api/organism")
+    def organism_create(body: dict = Body(default={})):
+        """Create a persistent organism in a habitat (or create a habitat).
+
+        Body: { "id": str, "habitat_id": str | null, "seed": int,
+                "n_patches": int, "patch_index": int, "architecture": str }
+        If habitat_id is omitted a fresh default habitat is created.
+        """
+        oid = body.get("id") or time.strftime("org-%Y%m%dT%H%M%S")
+        if not ORGANISM_ID.match(str(oid)):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        if oid in organism_holder:
+            raise ParamError(f"organism {oid!r} already exists")
+
+        hid = body.get("habitat_id")
+        if hid is not None:
+            if hid not in habitat_holder:
+                raise HTTPException(status_code=404, detail=f"no habitat named {hid!r}")
+            habitat = habitat_holder[hid]
+        else:
+            habitat = make_default_habitat(
+                seed=int(body.get("seed", 0)), n_patches=int(body.get("n_patches", 4)))
+
+        org = make_organism(
+            architecture=str(body.get("architecture", "ecs_iw")),
+            seed=int(body.get("seed", 0)),
+            habitat=habitat,
+            patch_index=int(body.get("patch_index", 0)),
+        )
+        organism_holder[oid] = org
+        # Register the habitat too so its chemistry stays addressable.
+        if hid is None:
+            hid = f"hab-for-{oid}"
+            habitat_holder[hid] = habitat
+        return {"id": oid, "habitat_id": hid, "state": org.inspector_state()}
+
+    @app.get("/api/organism/{oid}")
+    def organism_get(oid: str):
+        if not ORGANISM_ID.match(oid):
+            raise ParamError("invalid organism id")
+        if oid not in organism_holder:
+            raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
+        return organism_holder[oid].inspector_state()
+
+    @app.post("/api/organism/{oid}/step")
+    def organism_step(oid: str, body: dict = Body(default={})):
+        if not ORGANISM_ID.match(oid):
+            raise ParamError("invalid organism id")
+        if oid not in organism_holder:
+            raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
+        n = body.get("n", 1)
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 1_000:
+            raise ParamError("n must be an integer in [1, 1000]")
+        org = organism_holder[oid]
+        last = None
+        for _ in range(n):
+            last = org.step()
+        return {"id": oid, "steps": n, "last": last,
+                "state": org.inspector_state()}
+
+    @app.get("/api/organism/{oid}/inspect")
+    def organism_inspect(oid: str):
+        """Mind Inspector view: full organism + habitat inspector state."""
+        if not ORGANISM_ID.match(oid):
+            raise ParamError("invalid organism id")
+        if oid not in organism_holder:
+            raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
+        return organism_holder[oid].inspector_state()
+
+    @app.post("/api/organism/{oid}/checkpoint")
+    def organism_checkpoint(oid: str):
+        if not ORGANISM_ID.match(oid):
+            raise ParamError("invalid organism id")
+        if oid not in organism_holder:
+            raise HTTPException(status_code=404, detail=f"no organism named {oid!r}")
+        return {"id": oid, "checkpoint": organism_holder[oid].checkpoint()}
 
     # ---- scientific 3D PM3D cosmology simulation (actual numerical state) ----
     PM3D_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
