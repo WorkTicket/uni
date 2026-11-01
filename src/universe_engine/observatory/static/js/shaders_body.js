@@ -316,7 +316,7 @@
 // Renders nutrient/monomer/waste concentration as a coloured field over the planet surface,
 // gated to liquid-water worlds. Values are driven by the habitat simulation (chemistry fields).
 U.SH.chemVS = PRE + `
-in vec2 vNdc;
+out vec2 vNdc;
 uniform mat3 uVinv; uniform vec2 uProj; uniform float uPxScale;
 uniform vec3 uC; uniform float uR;
 uniform vec3 uSun; uniform float uSunI;
@@ -343,7 +343,8 @@ vec3 chemField(vec3 dir, float t){
   return vec3(n, m, w);
 }
 void main(){
-  vec3 ndc = vec3(vN, 0.0, 1.0);
+  vec3 ndc = vec3(vN, 0.0);
+  ndc.z = 1.0;
   vec3 worldDir = uVinv * ndc;
   float R = uR;
   if (uLiqW <= 0.0){ discard; }   // no chemistry field on sterile/dry worlds
