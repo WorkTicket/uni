@@ -1,23 +1,89 @@
-# Scientific Claims Matrix — Universe Engine Sprint 14
+# Universe Engine — Scientific Claims Matrix
 
-**Audited SHA:** `7f4f09b86a44bafd5f92bfe84ec04f2385e7ff1d`  
-**Audit branch:** `audit/project-genesis-evidence`  
-**Status labels:** VERIFIED / IMPLEMENTED_UNVERIFIED / PROTOTYPE / ILLUSTRATIVE / STUB / FAILED / NOT_TESTED / NOT_APPLICABLE.
+**Audited commit:** `ef10c4c87e6ae916e08d459b2c0f68b868c90d75` (branch `audit/project-genesis-evidence`, based on `feature/project-genesis-research` `7f4f09b`)  
+**Machine/versions:** Windows 11 10.0.26100-SP0, Python 3.14.5, pytest 9.2.0, numpy 2.5.4, PyYAML 6.0.3, scipy (installed), fastapi 0.139.0  
+**Provenance tags used:** Simulated, Analytic, Reconstructed, Illustrative, Speculative (per `world_state.Provenance`)
 
-| Claim | Source code / SHA | Evidence: command + run log | Independent reference or invariant | Caveat | Rendering provenance | Status |
-|---|---|---|---|---|---|---|
-| Cosmological numerical evolution (FLRW background + PM3D gravity) | `src/universe_engine/core/clocks.py`, `src/universe_engine/solvers/pm3d.py`, `7f4f09b` | `python -m pytest tests/cosmos tests/core tests/unit/test_nbody_unit.py -q` → `audit_runs/pytest_full/stdout.log` | CIC single-particle, uniform lattice zero force, total momentum exactly zero | cold dark matter only, periodic box | SIMULATED (numerical) | VERIFIED (unit-level) |
-| Physically calibrated initial conditions | `src/universe_engine/cosmos/initial_conditions.py`, `7f4f09b` | `python -m pytest tests/cosmos -q` → `audit_runs/pytest_full/stdout.log` | Gaussian seeded ICs, Hermitian symmetry | seeded catalog, not derived from observations | SIMULATED | IMPLEMENTED_UNVERIFIED |
-| Halo existence and dynamics | `src/universe_engine/cosmos/`, `7f4f09b` | `python -m pytest tests/cosmos -q` → `audit_runs/pytest_full/stdout.log` | diagnostics | no halo finder linked to stars | illustrative | IMPLEMENTED_UNVERIFIED |
-| Planet environmental persistence | `src/universe_engine/planet/model.py`, `7f4f09b` | `python -m pytest tests/planet -q` → `audit_runs/pytest_full/stdout.log` | PlanetSpec surface temp/ocean | gray/1D climate | reduced-order | IMPLEMENTED_UNVERIFIED |
-| Replicator life | `src/universe_engine/prebiotic/`, `replicators/`, `7f4f09b` | `python -m pytest tests/prebiotic tests/replicators -q` → `audit_runs/pytest_full/stdout.log` | seeded replicators, lineage | seeded, not abiogenesis | SIMULATED | IMPLEMENTED_UNVERIFIED |
-| Quantum CHSH (toy) | `src/universe_engine/research/quantum/chsh.py`, `states.py`, `7f4f09b` | `python -m pytest tests/research/test_quantum.py -q` → `audit_runs/pytest_full/stdout.log` | local classical bound S ≤ 2; quantum expected 2√2; no-signalling marginals | toy CHSH, not a full quantum universe | SIMULATED (toy) | VERIFIED |
-| Working-memory oracle solves delayed_cue | `src/universe_engine/research/diagnostics/statistical_replication.py` (`WorkingMemoryOracle`), `7f4f09b` | `python -m pytest tests/research/test_memory_oracle.py -q` → `audit_runs/pytest_full/stdout.log` | paired advantage CI excludes zero | programmed, not learned; positive control | SIMULATED (diagnostic) | VERIFIED |
-| Working-memory oracle solves occluded_target | same | same | paired advantage CI excludes zero | programmed, not learned | SIMULATED (diagnostic) | VERIFIED |
-| Trainable memory agent solves delayed_cue / occluded_target | `src/universe_engine/research/diagnostics/statistical_replication.py` (recurrent/world_model/gated_recurrent), `7f4f09b` | `python -m pytest tests/research/test_memory_oracle.py -q` → `test_trainable_agents_fail_memory_tasks` | mean < +0.2 delayed_cue; mean ≈ −1.0 occluded_target | learning failure, not demonstrated | n/a | FAILED (learning not demonstrated) |
-| ECS-IW self model / workspace | `src/universe_engine/research/self_model/`, `workspace/`, `EcsIwAblation`, `7f4f09b` | `python -m pytest tests/research/test_self_model_workspace.py -q` → `audit_runs/pytest_full/stdout.log` | not subjective consciousness | ablations deferred (no baseline) | n/a | IMPLEMENTED_UNVERIFIED |
-| Checkpoint full-state replay | `src/universe_engine/research/persistent_organism.py`, `7f4f09b` | `python -m pytest tests/research/test_persistent_organism_checkpoint.py -q` → `audit_runs/pytest_full/stdout.log` | field-by-field match | controller RNG re-seeded, not continued → not bit-exact | SIMULATED | PROTOTYPE |
-| Brane dynamics | `src/universe_engine/frontier/brane_world.py`, `7f4f09b` | `python -m pytest tests/frontier -q` → `audit_runs/pytest_full/stdout.log` | junction residual | labeled `speculative_research` | illustrative/speculative | PROTOTYPE |
-| Organism API endpoints | `src/universe_engine/observatory/server.py` (`/api/organism*`), `7f4f09b` | `python -m pytest tests/observatory/test_organism_endpoints.py -q` → `audit_runs/pytest_full/stdout.log` | create/step/inspect/checkpoint behave | endpoints exist; no graphical Mind Inspector UI | SIMULATED (API) | IMPLEMENTED_UNVERIFIED |
-| Connected Mind Inspector UI | `src/universe_engine/observatory/static/js/ui.js` (3D viewer HUD), `7f4f09b` | no graphical Mind Inspector test executed | n/a | UI is a 3D universe viewer; no open-planet→habitat→organism→follow→inspect-memory flow | illustrative | NOT_TESTED (no browser E2E) |
-| Cosmology→Halo→Star→Planet causal chain | multiple, `7f4f09b` | no end-to-end numerical coupling test | n/a | chain not numerically connected; independent catalogs | missing/speculative | NOT_TESTED |
+Each row: claim, mathematical validity, empirical validation, evidence path/command/log, and whether on-screen scientific representation is authoritative or illustrative.
+
+## Physics / cosmology
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| FLRW background + H(a) from Ωm, Ωr, ΩΛ | Analytic, closed-form | Cross-checked vs independent code: age to 1.2e-5 relative | `status_static.json` `cosmology_cross_check`; `tests/unit/` | Simulated (1D laboratory, dimensionless units) |
+| Linear matter growth (scale-independent) | Approximate analytic | Not a CLASS/CAMB transfer function; illustrative Gaussian IC | README §Scientific status | Illustrative initial field |
+| 3D PM3D gravity (comoving, KDK, Poisson FFT) | Numerical | 10 regression tests: linear growth, uniform density zero-force, force symmetry, density mean zero | `tests/unit/test_nbody_unit.py`, `solvers/pm3d.py` | Simulated (PM3D state) |
+| PM3D linear-growth validation | Approximate | 30% tolerance due to CIC + particle noise | status_static.json scientific_limitations | Simulated |
+| 1D hydro (Euler) exact Riemann | Numerical, exact reference | T1 benchmark: 106 checks vs exact Riemann solution | `universe benchmark hydro` | Simulated (1D, dimensionless) |
+| 1D gravity Jeans / two-fluid | Numerical | T1: Jeans growth, Poisson, conservation; momentum exact to 4e-18 | `universe benchmark gravity|nbody` | Simulated |
+| Energy drift bounded | Numerical | Drift ≤ ~1e-3 in verified regimes; ~4e-3 strongly nonlinear | `session.py` DRIFT_WARNING_LEVEL; status_static.json | Simulated |
+
+## Quantum (Program B)
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| CHSH quantum S ≈ 2√2 ≈ 2.83 | Numerical (density matrix) | `test_quantum_chsh_max`, `test_chsh_optimal_settings_produce_violation`; S within 0.1 of 2√2 | `tests/research/test_quantum.py`, `research/quantum/chsh.py` | Simulated (toy two-qubit) |
+| Classical CHSH bound S ≤ 2 not violated | Analytic | `test_classical_chsh_no_violation` | `tests/research/test_quantum.py` | Simulated |
+| No-signalling marginals | Analytic | `result.no_signalling_alice` | `tests/research/test_quantum.py` | Simulated |
+| Quantum universe / global wavefunction | — | **NOT CLAIMED / NOT IMPLEMENTED** (by design) | README, status_static.json | Not applicable |
+
+> Note: `docs/IMPLEMENTATION_STATUS.json` test_command `python -c "from universe_engine.research.review import ..."` and `docs/SCIENTIFIC_REVIEW.md` report 6 of 7 modules passed. CHSH toy agreement does not imply a quantum universe.
+
+## Research agents (Programs D1–D6)
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| Reactive ≥ recurrent on fully-observable GridWorld | Empirical (null) | Reactive +0.48/+0.49/+0.42 vs recurrent −0.77/−1.16/−2.44 (original); null result retained | `docs/SPRINT_11_FINDINGS.md`, `tests/research/test_gridworld.py` | Illustrative agent task |
+| Delayed-cue recurrent −0.06 > reactive −0.21 | Empirical, thin | Single/limited result; **insufficient for a claim** (≥20-seed paired CI not yet done) | `research/diagnostics/memory_tasks.py` | Illustrative |
+| No reliable memory/world-model advantage | Empirical, 15 macro-seeds | CI [−0.138, +0.269] includes zero; Cohen's d reported | `docs/SPRINT_12_FINDINGS.md`, Phase 2 | Illustrative |
+| Task-conditioned ECS-IW advantage | Hypothesis | Advantage only when task requires temporal integration | Sprint 11/12 findings | Hypothesis |
+
+## Persistent organism (Sprint 12)
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| Persistent identity + body + memory + self-model | Numerical | `PersistentOrganism.checkpoint()`/`restore()`; `inspector_state()` | `research/persistent_organism.py`, `tests/research/`, `docs/SPRINT_12_FINDings.md` Phase 5-6 | Simulated |
+| Actions change actual habitat chemistry | Numerical | `act()` consumes N, produces Wst on patch | `persistent_organism.py` `act()` | Simulated |
+| Save/reload/resume == uninterrupted (hash) | **NOT YET DEMONSTRATED** | Required Stage 2 acceptance test; run A vs run B over many steps | Planned Stage 2 | Simulated (planned) |
+| Consciousness / subjective experience | — | **NOT CLAIMED**; standing disclaimer: functional measures only | AGENTS.md, SCIENTIFIC_LIMITS.md | Not applicable |
+
+## Multiscale (Program A9)
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| Exact mass conservation | Numerical | Compared schemes documented; COM accuracy limited by region-based advection | `tests/research/test_multiscale.py`, `research/multiscale/adaptive.py` | Simulated |
+
+## Integration chain (Cosmology → Organism)
+
+| Link | Classification | Evidence |
+|---|---|---|
+| Cosmology → Halo | reduced-order | Density-peak thresholded candidates (no FoF/SO bound finder) |
+| Halo → Star | illustrative / statistical | `sampleGalaxyStars` per galaxy |
+| Star → Planet | illustrative | Probabilistic system samples, equilibrium temperature estimate |
+| Planet → Habitat | numerical | `Habitat` reads `planet.environment()` each step |
+| Habitat → Organism | numerical | Organism senses local patch only; acts on patch chemistry |
+
+## Planetary / chemistry / prebiotic / replicators
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| Planet 1D energy-balance climate | Numerical, Earth-tuned | 17 tests; NOT predictive for other worlds | `planet/model.py` | Simulated (Earth-tuned) |
+| Chemistry mass-action, element/charge conserved | Numerical | 10 tests vs analytic; **rate parameters illustrative, not measured** | `chemistry/network.py` | Simulated |
+| Prebiotic polymer/vesicle | Numerical, assumed params | 14 tests; kinetics/vesicle params assumed placeholders; not coupled to chemistry networks | `prebiotic/compartment.py` | Simulated |
+| Replicators copying, tau-leap, lineage | Numerical | 9 tests incl. error threshold; duplex-stability placeholder params; not coupled to protocells/chemistry | `replicators/population.py` | Simulated |
+
+## Viewer / observatory
+
+| Claim | Validity | Validation | Evidence | Authoritative or illustrative |
+|---|---|---|---|---|
+| Procedural universe = f(seed, time, camera) | Illustrative | View-driven; regenerates detail from camera/zoom (Bug C); not authoritative state | `static/js/app.js`, `layers2.js` | Illustrative |
+| Scientific Simulation mode = PM3D state | Simulated | Renders actual PM3D particle state from `/api/pm3d` | `server.py`, `simParticles` layer | Simulated |
+| "Whole history Planck→galaxies" | Illustrative | Procedural; no CMB/CLASS/CAMB, no N-body galaxy formation | README §Scientific status | Illustrative |
+| Viewer rendered in real browser | — | **NOT DONE**; only Node execution against real data | status_static.json | Not tested |
+| 20-step E2E on Windows | — | **NOT TESTED**; no desktop executable built/run | status_static.json, README | Not tested |
+
+## Overall
+
+- Verified numerical modules: quantum CHSH, PM3D gravity, 1D hydro/gravity, habitat, planet, chemistry, replicators, multiverse, world-state spine, self-model/workspace, discovery, multiscale, evolution, planetary ecology.
+- Illustrative/prototype: viewer procedural mode, agent research tasks, prebiotic kinetics, stellar/planetary sampling.
+- Not claimed: quantum universe, consciousness, global wavefunction, abiogenesis, end-to-end numerical cosmology→organism.
