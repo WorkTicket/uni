@@ -18,6 +18,18 @@ from ..multiverse import MultiverseManager, MultiverseError
 from .research_lab import ResearchLab, ResearchLabError
 from ..habitat import Habitat, make_default_network
 from ..planet.model import Planet, PlanetSpec
+from ..core.clocks import FLWRCosmology
+from ..geometry.geometry_core import (
+    flat_minkowski_4d, flat_minkowski_5d, circle_compactification,
+    GeometrySpec,
+)
+from ..frontier.compact_dimensions import (
+    CircleCompactification, ToroidalCompactification, SphereCompactification,
+    CompactDimensionExplorer, verify_kk_circle_spectrum, verify_kk_torus_spectrum,
+    verify_sphere_spectrum,
+)
+from ..frontier.planck_scale import PLANCK_LAYER, PlanckUnits
+from ..frontier.brane_world import BraneWorldModel, BraneWorldParameters
 
 STATIC = Path(__file__).parent / "static"
 MAX_STEPS_PER_REQUEST = 10_000
@@ -214,6 +226,146 @@ def create_app(save_dir="runs/observatory"):
             raise ParamError("invalid universe id")
         rec = multiverse.branch(uid, body.get("name", f"branch of {uid}"), body.get("from_checkpoint"), body.get("seed"))
         return {"universe": rec.to_dict(), "provenance": rec.provenance}
+
+    # ---- bulk geometry (Requirement 12: Bulk geometry view) ----
+    @app.get("/api/geometry/flat4d")
+    def geometry_flat4d():
+        spec = flat_minkowski_4d()
+        return spec.to_dict()
+
+    @app.get("/api/geometry/flat5d")
+    def geometry_flat5d():
+        spec = flat_minkowski_5d()
+        return spec.to_dict()
+
+    @app.get("/api/geometry/circle/{radius}")
+    def geometry_circle(radius: float):
+        spec = circle_compactification(radius)
+        return spec.to_dict()
+
+    @app.post("/api/geometry/circle")
+    def geometry_circle_create(body: dict = Body(default={})):
+        radius = float(body.get("radius", 1.0))
+        spec = circle_compactification(radius)
+        return spec.to_dict()
+
+    @app.get("/api/kk/circle/{radius}")
+    def kk_circle(radius: float, max_mode: int = 10):
+        result = verify_kk_circle_spectrum(radius, max_mode=max_mode)
+        return result
+
+    @app.post("/api/kk/torus")
+    def kk_torus(body: dict = Body(default={})):
+        radii = body.get("radii", [1.0, 2.0])
+        modes = body.get("modes", [[1, 0], [0, 1], [1, 1]])
+        result = verify_kk_torus_spectrum(radii, modes)
+        return result
+
+    @app.get("/api/kk/sphere/{radius}")
+    def kk_sphere(radius: float, max_l: int = 5):
+        result = verify_sphere_spectrum(radius, max_l=max_l)
+        return result
+
+    @app.get("/api/explorer/compact/{radius}")
+    def compact_explorer(radius: float, scales: str = "0.1,1.0,5.0"):
+        scale_list = [float(s) for s in scales.split(",")]
+        explorer = CompactDimensionExplorer(radius)
+        return explorer.visibility_vs_scale(scale_list)
+
+    # ---- brane dynamics (Requirement 12: Brane dynamics view) ----
+    @app.get("/api/brane/parameters")
+    def brane_parameters():
+        params = BraneWorldParameters()
+        params.derive_4d_constants()
+        return {
+            "Lambda_5": params.Lambda_5,
+            "G_5": params.G_5,
+            "k": params.k,
+            "lambda_brane": params.lambda_brane,
+            "G_4": params.G_4,
+            "Lambda_4": params.Lambda_4,
+            "classification": "speculative_research",
+        }
+
+    @app.post("/api/brane/simulate")
+    def brane_simulate(body: dict = Body(default={})):
+        params = BraneWorldParameters(
+            Lambda_5=float(body.get("Lambda_5", -6.0)),
+            G_5=float(body.get("G_5", 1.0)),
+            lambda_brane=float(body.get("lambda_brane", 10.0)),
+            junction_tol=float(body.get("junction_tol", 1e12)),
+        )
+        params.derive_4d_constants()
+        model = BraneWorldModel(params)
+        a0 = float(body.get("a_start", 1e-10))
+        rho_r = float(body.get("rho_radiation", 1e8))
+        state = model.initialize(t=0.0, a_brane=a0, rho_radiation=rho_r)
+        steps = int(body.get("steps", 10))
+        dt = float(body.get("dt", 0.01))
+        history = []
+        for _ in range(steps):
+            state = model.step(dt)
+            history.append({
+                "t": state.t, "a": state.a_brane, "H": state.H_brane,
+                "rho": state.rho_matter + state.rho_radiation,
+                "validity": state.validity,
+                "junction_residual": state.junction_residual,
+            })
+        return {
+            "parameters": {"Lambda_5": params.Lambda_5, "G_5": params.G_5,
+                          "lambda_brane": params.lambda_brane, "G_4": params.G_4},
+            "initial": {"a": state.a_brane, "H": state.H_brane},
+            "history": history,
+            "classification": "speculative_research",
+        }
+
+    # ---- Planck-scale / quantum geometry laboratory (Requirement 12) ----
+    @app.get("/api/planck/units")
+    def planck_units():
+        return PLANCK_LAYER.to_dict()
+
+    @app.get("/api/planck/length")
+    def planck_length():
+        return {"planck_length_m": PLANCK_LAYER.planck_length()}
+
+    @app.get("/api/planck/time")
+    def planck_time():
+        return {"planck_time_s": PLANCK_LAYER.planck_time()}
+
+    @app.get("/api/planck/mass")
+    def planck_mass():
+        return {"planck_mass_kg": PLANCK_LAYER.planck_mass()}
+
+    @app.get("/api/planck/energy")
+    def planck_energy():
+        return {"planck_energy_J": PLANCK_LAYER.planck_energy()}
+
+    @app.post("/api/planck/discrete/step")
+    def planck_discrete_step(body: dict = Body(default={})):
+        model = PLANCK_LAYER.models["discrete_geometry"]
+        state = body.get("state")
+        if state is None:
+            state = model.initial_state()
+        dt = float(body.get("dt", 1e-43))
+        state = model.step(state, dt)
+        obs = model.observables(state)
+        return {"state": state, "observables": obs}
+
+    @app.post("/api/planck/spinnetwork/step")
+    def planck_spinnetwork_step(body: dict = Body(default={})):
+        model = PLANCK_LAYER.models["spin_network_inspired"]
+        state = body.get("state")
+        if state is None:
+            state = model.initial_state()
+        dt = float(body.get("dt", 1e-43))
+        state = model.step(state, dt)
+        obs = model.observables(state)
+        return {"state": state, "observables": obs}
+
+    # ---- origin events (Requirement 12: Multiverse overview) ----
+    @app.get("/api/origin/events")
+    def origin_events():
+        return {"origins": multiverse.list_origin_events()}
 
     # ---- research laboratory ----
     EXPERIMENT_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")

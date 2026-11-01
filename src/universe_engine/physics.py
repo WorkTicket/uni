@@ -5,6 +5,10 @@ H(a)^2 / H0^2 = Omega_r/a^4 + Omega_m/a^3 + Omega_Lambda.
 D''(ln a) + [2 + dlnH/dln a] D'(ln a) - 3 Omega_m(a)/2 D = 0.
 The latter assumes pressureless matter, smooth dark energy, and no scale
  dependence; thus illustrative for sufficiently late linear matter growth.
+
+The solver supports any a_end > a_start > 0, including future evolution beyond
+the present epoch (a > 1). There is no present-day endpoint; a_end is a
+model-specific validity bound, not an arbitrary stop at today's cosmic age.
 """
 from math import sqrt
 import numpy as np
@@ -22,8 +26,6 @@ def validate_cosmology(c):
         raise ValueError('starter requires flat cosmology with sum Omega = 1')
     if not (0 < c['a_start'] < c['a_end']):
         raise ValueError('require 0 < a_start < a_end')
-    if c['a_end'] > 10:
-        raise ValueError('a_end beyond the validated future domain (a <= 10)')
     if int(c['steps']) < 8 or int(c['steps']) > 200000:
         raise ValueError('steps outside supported limits')
 

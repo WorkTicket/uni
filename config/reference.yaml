@@ -8,8 +8,9 @@ cosmology:
   Omega_r: 0.000092
   Omega_Lambda: 0.684908
   a_start: 0.02
-  a_end: 1.0
-  steps: 500
+  a_end: 10.0
+  max_a_end: 100.0
+  steps: 5000
 field:
   grid_size: 64
   box_size_Mpc: 100.0

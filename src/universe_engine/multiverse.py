@@ -21,8 +21,29 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from .core.origin_events import OriginEventManager
+from .core.clocks import (
+    Clock, UniverseClockSet, SimScheduler, make_default_clock_set,
+    FLWRCosmology,
+)
+from .core.universe import Universe, UniverseState, OriginEvent
+
 SAVE_SCHEMA = "multiverse/v1"
 CHECKPOINT_SCHEMA = "checkpoint/v1"
+UNIVERSE_SCHEMA = "universe/v1"
+
+
+def _jsonify(obj: Any) -> Any:
+    """Recursively convert numpy arrays and other non-JSON types to JSON-safe values."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating, np.integer)):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {k: _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    return obj
 
 # Observationally motivated (Planck 2018-like) reference flat LCDM.
 REFERENCE_COSMOLOGY = {
@@ -35,7 +56,10 @@ REFERENCE_COSMOLOGY = {
 # Resource limits to defend against malformed/imported state.
 MAX_CHECKPOINTS = 64
 MAX_NAME_LEN = 128
-MAX_A_END = 10.0
+# a_end is a model-specific validity bound, not a present-day clamp. The
+# reference flat LCDM solver supports any a_end > 0; 10.0 remains a default
+# sanity cap that can be raised per-universe.
+MAX_A_END_DEFAULT = 10.0
 
 
 class MultiverseError(ValueError):
@@ -80,8 +104,14 @@ def validate_cosmology(c: Dict[str, float]) -> None:
         raise MultiverseError("cosmology must be flat (Omega sum = 1) within tolerance")
     if not (40 <= c["H0_km_s_Mpc"] <= 90):
         raise MultiverseError("H0 outside validated range [40, 90] km/s/Mpc")
-    if c["a_end"] > MAX_A_END:
-        raise MultiverseError(f"a_end {c['a_end']} beyond validated future domain (a <= {MAX_A_END})")
+    a_end = c.get("a_end", 1.0)
+    max_a_end = c.get("max_a_end", MAX_A_END_DEFAULT)
+    if a_end <= 0:
+        raise MultiverseError("a_end must be positive")
+    if a_end > max_a_end:
+        raise MultiverseError(
+            f"a_end {a_end} beyond the configured future domain (max_a_end={max_a_end})"
+        )
 
 
 @dataclass
@@ -125,15 +155,24 @@ class CheckpointRecord:
 class MultiverseManager:
     """Registry of independent universes with persistent checkpoint storage.
 
-    Universes live under a root directory; each universe gets its own subdirectory
-    containing metadata.json plus binary checkpoint arrays. Isolation is by directory
-    and by in-memory record; no shared mutable simulation state.
+    Each universe is a full `Universe` instance with its own independent clocks,
+    FLRW cosmology, and mutable state. Universes live under a root directory;
+    each universe gets its own subdirectory containing metadata.json plus binary
+    checkpoint arrays. Isolation is by directory and by in-memory record; no
+    shared mutable simulation state.
+
+    Causally disconnected universes do not share a unique physically meaningful
+    global time. Any ordering of their creation events is a defined feature of
+    the selected bulk model (or an administrative simulation ordering).
     """
 
     def __init__(self, root: str = "runs/multiverse"):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self._universes: Dict[str, UniverseRecord] = {}
+        self._instances: Dict[str, Universe] = {}  # live universe instances
+        self.scheduler = SimScheduler()
+        self.origin_manager = OriginEventManager(self)
         self._load_index()
 
     # ---- index ----
@@ -156,7 +195,34 @@ class MultiverseManager:
         d.mkdir(parents=True, exist_ok=True)
         tmp = d / "metadata.json.tmp"
         tmp.write_text(json.dumps(rec.to_dict(), indent=2), encoding="utf-8")
-        os.replace(tmp, d / "metadata.json")   # atomic
+        os.replace(tmp, d / "metadata.json")
+
+    # ---- instance access ----
+    def get_instance(self, uid: str) -> Universe:
+        """Return the live Universe instance for uid, loading it if necessary."""
+        if uid in self._instances:
+            return self._instances[uid]
+        rec = self.get(uid)
+        # Reconstruct a Universe from the stored record.
+        inst = Universe(
+            universe_id=uid, name=rec.name, seed=rec.seed,
+            cosmology=rec.cosmology, model_settings=rec.model_settings,
+            origin_event=None,
+        )
+        inst.status = rec.status
+        inst.created_at = rec.created_at
+        inst.provenance = rec.provenance
+        # Restore clocks and scale factor from the record.
+        inst.clocks.cosmic.t = rec.cosmic_time_s
+        inst.clocks.scale_factor.t = rec.scale_factor
+        inst.clocks.bulk.t = rec.cosmic_time_s
+        inst._state = inst.flrw.state_at(rec.scale_factor, rec.cosmic_time_s)
+        self._instances[uid] = inst
+        return inst
+
+    def register_instance(self, uid: str, inst: Universe) -> None:
+        self._instances[uid] = inst
+        self.scheduler.register(uid, inst.clocks)   # atomic
 
     # ---- creation ----
     def create_universe(
@@ -165,18 +231,21 @@ class MultiverseManager:
         seed: Optional[int] = None,
         cosmology: Optional[Dict[str, float]] = None,
         model_settings: Optional[Dict[str, Any]] = None,
+        origin_event: Optional[OriginEvent] = None,
     ) -> UniverseRecord:
         if not name or not name.strip() or len(name) > MAX_NAME_LEN:
             raise MultiverseError(f"name must be non-empty and <= {MAX_NAME_LEN} chars")
         c = dict(REFERENCE_COSMOLOGY) if cosmology is None else dict(cosmology)
         c.setdefault("a_start", 1e-13)
-        c.setdefault("a_end", 1.0)
+        c.setdefault("a_end", 2.0)          # default to future evolution past present
         c.setdefault("steps", 500)
+        c.setdefault("max_a_end", MAX_A_END_DEFAULT)
         validate_cosmology(c)
         ms = {
             "a_start": float(c["a_start"]),
             "a_end": float(c["a_end"]),
             "steps": int(c["steps"]),
+            "max_a_end": float(c["max_a_end"]),
             "deterministic": True,
             **(model_settings or {}),
         }
@@ -196,6 +265,14 @@ class MultiverseManager:
         )
         self._universes[rec.uuid] = rec
         self._save_meta(rec)
+
+        # Create the live instance and register with the scheduler.
+        inst = Universe(
+            universe_id=rec.uuid, name=rec.name, seed=rec.seed,
+            cosmology=rec.cosmology, model_settings=rec.model_settings,
+            origin_event=origin_event,
+        )
+        self.register_instance(rec.uuid, inst)
         return rec
 
     def list_universes(self) -> List[UniverseRecord]:
@@ -239,10 +316,75 @@ class MultiverseManager:
         rec = self.get(uid)
         rec.status = status
         self._save_meta(rec)
+        # Sync live instance if present.
+        if uid in self._instances:
+            if status == "paused":
+                self._instances[uid].pause()
+            elif status == "running":
+                self._instances[uid].resume()
+        return rec
+
+    # ---- evolution ----
+    def advance_universe(self, uid: str, dt_master_s: float) -> Dict[str, Any]:
+        """Advance one universe by dt_master_s seconds of master time."""
+        inst = self.get_instance(uid)
+        result = inst.advance(dt_master_s, self.scheduler)
+        # Sync record with instance state.
+        rec = self.get(uid)
+        rec.cosmic_time_s = inst._state.t
+        rec.scale_factor = inst._state.a
+        rec.status = inst.status
+
+        # Check for model-dependent origin transitions.
+        state = inst.state
+        transitions = self.origin_manager.check_all_transitions(
+            uid, state, inst._state.t)
+        origin_events = []
+        for transition in transitions:
+            record = self.origin_manager.create_universe_from_transition(
+                transition, inst, self)
+            if record is not None and record.new_universe_id:
+                origin_events.append(record.to_dict())
+
+        self._save_meta(rec)
+        result["origin_events"] = origin_events
+        return result
+
+    def advance_all(self, dt_master_s: float) -> Dict[str, Dict[str, Any]]:
+        """Advance every registered universe by dt_master_s."""
+        results: Dict[str, Dict[str, Any]] = {}
+        for uid in list(self._universes.keys()):
+            results[uid] = self.advance_universe(uid, dt_master_s)
+        return results
+
+    def pause_universe(self, uid: str) -> UniverseRecord:
+        return self.set_status(uid, "paused")
+
+    def resume_universe(self, uid: str) -> UniverseRecord:
+        return self.set_status(uid, "running")
+
+    def invalidate_universe(self, uid: str, reason: str) -> UniverseRecord:
+        inst = self.get_instance(uid)
+        inst.invalidate(reason)
+        rec = self.get(uid)
+        rec.status = "invalid"
+        self._save_meta(rec)
         return rec
 
     # ---- checkpoints ----
-    def checkpoint(self, uid: str, cid: Optional[str] = None, arrays: Optional[Dict[str, np.ndarray]] = None) -> CheckpointRecord:
+    def checkpoint(self, uid: str, cid: Optional[str] = None,
+                   arrays: Optional[Dict[str, np.ndarray]] = None) -> CheckpointRecord:
+        """Backward-compatible alias for checkpoint_universe."""
+        return self.checkpoint_universe(uid, cid, arrays)
+
+    def checkpoint_universe(self, uid: str, cid: Optional[str] = None,
+                            arrays: Optional[Dict[str, np.ndarray]] = None) -> CheckpointRecord:
+        inst = self.get_instance(uid)
+        cp_data = inst.checkpoint()
+        # Convert any numpy arrays in cp_data to lists for JSON serialization.
+        cp_data_json = _jsonify(cp_data)
+        if arrays:
+            cp_data_json["arrays"] = {k: np.asarray(v).tolist() for k, v in arrays.items()}
         rec = self.get(uid)
         if len(rec.checkpoints) >= MAX_CHECKPOINTS:
             raise MultiverseError(f"maximum {MAX_CHECKPOINTS} checkpoints reached for universe {uid}")
@@ -251,10 +393,6 @@ class MultiverseManager:
         d.mkdir(parents=True, exist_ok=True)
         cp_path = d / f"{cid}.npz"
         tmp = d / f"{cid}.tmp.npz"
-        payload: Dict[str, Any] = {}
-        if arrays:
-            for k, v in arrays.items():
-                payload[k] = np.asarray(v)
         meta = {
             "schema": CHECKPOINT_SCHEMA,
             "universe": uid,
@@ -264,7 +402,12 @@ class MultiverseManager:
             "scale_factor": rec.scale_factor,
             "config_sha": hashlib.sha256(json.dumps({"cosmology": rec.cosmology, "seed": rec.seed, "model_settings": rec.model_settings}, sort_keys=True).encode()).hexdigest()[:16],
         }
+        payload: Dict[str, Any] = {}
+        if arrays:
+            for k, v in arrays.items():
+                payload[k] = np.asarray(v)
         payload["meta"] = np.array(json.dumps(meta))
+        payload["universe_state"] = np.array(json.dumps(cp_data_json))
         np.savez_compressed(str(tmp), **payload)
         os.replace(str(tmp), str(cp_path))
         cprec = CheckpointRecord(
@@ -274,6 +417,7 @@ class MultiverseManager:
         )
         rec.checkpoints.append(asdict(cprec))
         rec.last_saved = now_iso()
+        inst.last_saved = now_iso()
         self._save_meta(rec)
         return cprec
 
@@ -295,7 +439,20 @@ class MultiverseManager:
             meta = json.loads(str(z["meta"]))
             if meta.get("schema") != CHECKPOINT_SCHEMA:
                 raise MultiverseError(f"unsupported checkpoint schema {meta.get('schema')!r}")
-            arrays = {k: z[k] for k in z.files if k != "meta"}
+            arrays = {k: z[k] for k in z.files if k != "meta" and k != "universe_state"}
+            # Restore the live Universe instance from checkpoint.
+            if "universe_state" in z.files:
+                cp_data = json.loads(str(z["universe_state"]))
+                inst = Universe.restore(cp_data)
+                self._instances[uid] = inst
+                self.scheduler.register(uid, inst.clocks)
+                rec.cosmic_time_s = float(meta["cosmic_time_s"])
+                rec.scale_factor = float(meta["scale_factor"])
+                rec.status = "paused"
+                rec.last_saved = now_iso()
+                self._save_meta(rec)
+                return {"meta": meta, "arrays": arrays, "universe": rec.to_dict()}
+        # Fallback: restore record-level time only.
         rec.cosmic_time_s = float(meta["cosmic_time_s"])
         rec.scale_factor = float(meta["scale_factor"])
         rec.status = "paused"
@@ -323,12 +480,22 @@ class MultiverseManager:
     def to_public(self) -> List[Dict[str, Any]]:
         out = []
         for r in self.list_universes():
-            out.append({
-                "uuid": r.uuid, "name": r.name, "created_at": r.created_at,
-                "seed": r.seed, "cosmic_age_Gyr": r.cosmic_time_s / 3.15576e16,
-                "cosmology": r.cosmology, "status": r.status,
-                "scale_factor": r.scale_factor, "last_saved": r.last_saved,
-                "checkpoints": len(r.checkpoints), "provenance": r.provenance,
-                "schema": r.schema,
-            })
+            # Prefer live instance state when available.
+            if r.uuid in self._instances:
+                inst = self._instances[r.uuid]
+                out.append(inst.to_public())
+            else:
+                out.append({
+                    "uuid": r.uuid, "name": r.name, "created_at": r.created_at,
+                    "seed": r.seed, "cosmic_age_Gyr": r.cosmic_time_s / 3.15576e16,
+                    "cosmology": r.cosmology, "status": r.status,
+                    "scale_factor": r.scale_factor, "last_saved": r.last_saved,
+                    "checkpoints": len(r.checkpoints), "provenance": r.provenance,
+                    "schema": r.schema,
+                })
         return out
+
+    # ---- origin events ----
+    def list_origin_events(self) -> List[Dict]:
+        """List all recorded universe-origin events."""
+        return self.origin_manager.list_origins()

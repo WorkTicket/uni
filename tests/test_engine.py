@@ -39,9 +39,9 @@ def test_future_cosmology_monotone_D():
     s=solve(c)
     assert np.all(np.diff(s['D'])>0)
 
-def test_validate_rejects_a_end_beyond_domain():
-    bad={**C,'a_end':11.0}
-    with pytest.raises(ValueError): validate_cosmology(bad)
+def test_validate_allows_future_a_end_beyond_present():
+    c={**C,'a_end':100.0}
+    validate_cosmology(c)  # must not raise: a_end is a model-specific validity bound
 
 def test_validate_allows_future_a_end():
     c={**C,'a_end':3.0}

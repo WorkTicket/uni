@@ -58,9 +58,9 @@ def initial_particles(n,seed,amplitude=0.035):
     return (grid+displacement)%1, displacement
 
 
-def pm_evolve(n=16,steps=100,seed=42,a_start=0.08,a_end=1.0,amplitude=0.035,omega_m=0.315,omega_lambda=0.684908,omega_r=0.000092):
-    if not (8<=n<=48 and steps>=4 and steps<=2000 and 0<a_start<a_end<=1 and 0<amplitude<=0.3):
-        raise ValueError('unsafe parameters: n 8..48; steps 4..2000; 0<a_start<a_end<=1; amplitude 0..0.3')
+def pm_evolve(n=16,steps=100,seed=42,a_start=0.08,a_end=2.0,amplitude=0.035,omega_m=0.315,omega_lambda=0.684908,omega_r=0.000092):
+    if not (8<=n<=48 and steps>=4 and steps<=2000 and 0<a_start<a_end and 0<amplitude<=0.3):
+        raise ValueError('unsafe parameters: n 8..48; steps 4..2000; 0<a_start<a_end; amplitude 0..0.3')
     if abs(omega_m+omega_lambda+omega_r-1)>1e-6: raise ValueError('requires flat background')
     p,u=initial_particles(n,seed,amplitude)
     s0,s1=np.log(a_start),np.log(a_end); h=(s1-s0)/steps
