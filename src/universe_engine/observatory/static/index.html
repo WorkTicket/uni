@@ -39,7 +39,10 @@
   <div class="seg" id="view-mode"><button data-m="illustrative" class="on">Illustrative (procedural)</button><button data-m="scientific">Scientific Simulation (PM3D)</button></div>
   <h4>Scientific Simulation</h4>
   <div class="row"><input id="pm3d-seed" type="number" value="42"><button id="btn-pm3d-create" class="pill">Create PM3D sim</button><button id="btn-pm3d-step" class="pill">Advance a→2.0</button></div>
+  <div class="row"><button id="btn-pm3d-play" class="pill">Play</button><button id="btn-pm3d-pause" class="pill">Pause</button><button id="btn-pm3d-checkpoint" class="pill">Checkpoint</button><button id="btn-pm3d-restore" class="pill">Restore</button></div>
+  <div class="row"><label>Speed <input id="pm3d-speed" type="number" value="1" step="0.1" min="0.1" style="width:4em"></label><label>Amax <input id="pm3d-amax" type="number" value="10" step="1" style="width:4em"></label></div>
   <p class="fine" id="pm3d-status" style="font-size:0.75em;opacity:0.7">No simulation loaded.</p>
+  <p class="fine" id="pm3d-stats" style="font-size:0.7em;opacity:0.9">a=– z=– t=– ρ_rms=–</p>
 </aside>
 
 <aside id="info" class="glass">

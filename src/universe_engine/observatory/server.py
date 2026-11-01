@@ -3,7 +3,9 @@ and stream its snapshots over a WebSocket. One session per app instance.
 Start:  universe-observatory --port 8000   then open http://127.0.0.1:8000/   (3D universe viewer; /lab = 1D laboratory viewer)"""
 import argparse
 import asyncio
+import os
 import re
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -55,17 +57,51 @@ def _pm3d_lattice(n_ppax: int, seed: int, amplitude: float):
     return grid, mass
 
 
-def _pm3d_snapshot_json(sim) -> dict:
-    """Convert a PM3D snapshot to JSON-safe form (numpy arrays -> lists)."""
+def _pm3d_snapshot_json(sim, max_points: int = 2000) -> dict:
+    """Convert a PM3D snapshot to bounded JSON-safe form.
+
+    Large arrays (positions, velocities, density field) are decimated to a
+    bounded number of points so frames can be streamed without converting
+    enormous numerical arrays to JSON. Full-resolution state is available via
+    the dedicated get endpoint when needed.
+    """
     s = sim.snapshot()
-    out = {}
-    for k, v in s.items():
-        if isinstance(v, np.ndarray):
-            out[k] = v.tolist()
-        elif isinstance(v, (np.floating, np.integer)):
-            out[k] = float(v)
-        else:
-            out[k] = v
+    n_particles = int(s["n_particles"])
+
+    def decimate(arr: np.ndarray) -> list:
+        arr = np.asarray(arr, dtype=float)
+        if arr.shape[0] <= max_points:
+            return arr.tolist()
+        idx = np.linspace(0, arr.shape[0] - 1, max_points).round().astype(int)
+        return arr[idx].tolist()
+
+    delta = np.asarray(s["density_contrast"], dtype=float)
+    out = {
+        "schema": s["schema"],
+        "a": float(s["a"]),
+        "t": float(s["t"]),
+        "t_Gyr": float(s["t_Gyr"]),
+        "H_s": float(s["H_s"]),
+        "z": float(s["z"]),
+        "box_size_Mpc": float(s["box_size_Mpc"]),
+        "n_mesh": int(s["n_mesh"]),
+        "n_particles": n_particles,
+        "returned_points": int(len(decimate(np.asarray(s["x_comoving"])))),
+        "x_comoving": decimate(np.asarray(s["x_comoving"])),
+        "x_comoving_Mpc": decimate(np.asarray(s["x_comoving_Mpc"])),
+        "x_proper_Mpc": decimate(np.asarray(s["x_proper_Mpc"])),
+        "v_pec_km_s": decimate(np.asarray(s["v_pec_km_s"])),
+        "density_stats": {
+            "mean": float(delta.mean()),
+            "rms": float(np.std(delta)),
+            "min": float(delta.min()),
+            "max": float(delta.max()),
+        },
+        "mass_is_physical": bool(s.get("mass_is_physical", False)),
+        "comoving_mean_density_Msun_Mpc3": float(s.get("comoving_mean_density_Msun_Mpc3", 0.0)),
+        "proper_mean_density_Msun_Mpc3": float(s.get("proper_mean_density_Msun_Mpc3", 0.0)),
+        "units": s.get("units", {}),
+    }
     return out
 
 
@@ -95,6 +131,42 @@ def create_app(save_dir="runs/observatory"):
     habitat_holder: Dict[str, Habitat] = {}
     # Scientific 3D PM3D cosmology simulation (actual numerical state, not procedural).
     pm3d_holder: Dict[str, ParticleMesh3D] = {}
+    pm3d_playback: Dict[str, dict] = {}
+    pm3d_universe: Dict[str, str] = {}   # pm3d sid -> multiverse universe uid
+    pm3d_lock = threading.RLock()
+
+    def _pm3d_advance(sid: str, st: dict) -> None:
+        """Advance one playing PM3D sim by a small d ln a (continuous playback)."""
+        with pm3d_lock:
+            sim = pm3d_holder.get(sid)
+        if sim is None:
+            return
+        speed = float(st.get("speed", 1.0))
+        a_max = float(st.get("a_max", 10.0))
+        d_ln_a = 0.002 * speed
+        a_end = sim.a * math.exp(d_ln_a)
+        if a_end > a_max:
+            st["playing"] = False
+            return
+        sim.run_to_a(a_end, max_d_ln_a=0.01)
+        st["a_current"] = float(sim.a)
+        st["t_current"] = float(sim.t)
+
+    def _pm3d_playback_worker() -> None:
+        """Background thread: advance playing PM3D sims continuously."""
+        while True:
+            time.sleep(0.05)
+            with pm3d_lock:
+                items = list(pm3d_playback.items())
+            for sid, st in items:
+                if not st.get("playing"):
+                    continue
+                try:
+                    _pm3d_advance(sid, st)
+                except Exception:
+                    pass
+
+    threading.Thread(target=_pm3d_playback_worker, daemon=True).start()
 
     @app.exception_handler(ParamError)
     async def _param_error(request, exc):
@@ -658,6 +730,7 @@ def create_app(save_dir="runs/observatory"):
         a_start = float(body.get("a_start", 0.2))
         a_end = float(body.get("a_end", 2.0))
         amplitude = float(body.get("amplitude", 0.02))
+        box_size_Mpc = float(body.get("box_size_Mpc", 100.0))
         if not (8 <= n_mesh <= 64):
             raise ParamError("n_mesh must be in [8, 64]")
         if not (2 <= n_ppax <= 16):
@@ -666,14 +739,37 @@ def create_app(save_dir="runs/observatory"):
             raise ParamError("require 0 < a_start < a_end")
         if not (0 < amplitude <= 0.3):
             raise ParamError("amplitude must be in (0, 0.3]")
+        if not (0 < box_size_Mpc):
+            raise ParamError("box_size_Mpc must be positive")
         cosmo = Cosmology(H0_km_s_Mpc=67.4, Omega_m=0.315, Omega_r=9.2e-5,
                           Omega_Lambda=0.684908)
         x, m = _pm3d_lattice(n_ppax, seed, amplitude)
         sim = ParticleMesh3D(n=n_mesh, x=x, u=np.zeros_like(x), mass=m,
-                             cosmology=cosmo, a=a_start)
+                             cosmology=cosmo, a=a_start, box_size_Mpc=box_size_Mpc)
         # t(a) is initialized in the constructor via the background integral.
         pm3d_holder[sid] = sim
-        return {"id": sid, "state": _pm3d_snapshot_json(sim), "classification": "SIMULATED"}
+        # Register the PM3D volume as a persistent multiverse universe so its
+        # cosmology, seed, box size, clock and checkpoints are owned by a
+        # universe record rather than only a global in-memory holder.
+        try:
+            urec = multiverse.create_universe(
+                name=sid, seed=seed,
+                cosmology={"H0_km_s_Mpc": cosmo.H0_km_s_Mpc, "Omega_m": cosmo.Omega_m,
+                           "Omega_r": cosmo.Omega_r, "Omega_Lambda": cosmo.Omega_Lambda,
+                           "a_start": a_start, "a_end": a_end, "steps": 500,
+                           "box_size_Mpc": box_size_Mpc},
+                model_settings={"n_mesh": n_mesh, "n_particles_per_axis": n_ppax,
+                                "amplitude": amplitude, "model": "pm3d"},
+                origin_event=None,
+            )
+            pm3d_universe[sid] = urec.uuid
+        except MultiverseError:
+            # Universe may already exist (e.g. re-create with same id); link to it.
+            existing = [u for u in multiverse.list_universes() if u.name == sid]
+            if existing:
+                pm3d_universe[sid] = existing[0].uuid
+        return {"id": sid, "state": _pm3d_snapshot_json(sim),
+                "classification": "SIMULATED", "universe": pm3d_universe.get(sid)}
 
     @app.get("/api/pm3d/{sid}")
     def pm3d_get(sid: str):
@@ -713,6 +809,185 @@ def create_app(save_dir="runs/observatory"):
         # t(a) is initialized in the constructor via the background integral.
         pm3d_holder[sid] = sim
         return {"id": sid, "state": _pm3d_snapshot_json(sim), "classification": "SIMULATED"}
+
+    # ---- PM3D continuous playback control ----
+    @app.post("/api/pm3d/{sid}/play")
+    def pm3d_play(sid: str, body: dict = Body(default={})):
+        """Start continuous playback of a PM3D simulation.
+
+        Body: { "speed": float, "a_max": float }
+        """
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        speed = float(body.get("speed", 1.0))
+        a_max = float(body.get("a_max", 10.0))
+        if speed <= 0:
+            raise ParamError("speed must be positive")
+        if a_max <= 0:
+            raise ParamError("a_max must be positive")
+        with pm3d_lock:
+            pm3d_playback[sid] = {"playing": True, "speed": speed, "a_max": a_max,
+                                  "a_current": float(pm3d_holder[sid].a),
+                                  "t_current": float(pm3d_holder[sid].t)}
+        return {"id": sid, "playing": True, "speed": speed, "a_max": a_max}
+
+    @app.post("/api/pm3d/{sid}/pause")
+    def pm3d_pause(sid: str):
+        """Pause continuous playback of a PM3D simulation."""
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        with pm3d_lock:
+            st = pm3d_playback.get(sid, {"playing": False})
+            st["playing"] = False
+            pm3d_playback[sid] = st
+        return {"id": sid, "playing": False}
+
+    @app.post("/api/pm3d/{sid}/speed")
+    def pm3d_speed(sid: str, body: dict = Body(default={})):
+        """Set the playback speed of a PM3D simulation."""
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        speed = float(body.get("speed", 1.0))
+        if speed <= 0:
+            raise ParamError("speed must be positive")
+        with pm3d_lock:
+            st = pm3d_playback.get(sid, {"playing": False, "speed": 1.0, "a_max": 10.0})
+            st["speed"] = speed
+            pm3d_playback[sid] = st
+        return {"id": sid, "speed": speed}
+
+    @app.get("/api/pm3d/{sid}/status")
+    def pm3d_status(sid: str):
+        """Return playback status and current state for a PM3D simulation."""
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        with pm3d_lock:
+            st = dict(pm3d_playback.get(sid, {"playing": False, "speed": 1.0,
+                                              "a_max": 10.0}))
+        sim = pm3d_holder[sid]
+        st["a"] = float(sim.a)
+        st["t"] = float(sim.t)
+        st["z"] = float(1.0 / sim.a - 1.0)
+        return {"id": sid, **st}
+
+    # ---- PM3D checkpoints (persisted via the multiverse, not a global holder) ----
+    @app.post("/api/pm3d/{sid}/checkpoint")
+    def pm3d_checkpoint(sid: str, body: dict = Body(default={})):
+        """Save a PM3D simulation checkpoint tied to its multiverse universe."""
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        cid = body.get("id") or time.strftime("cp-%Y%m%dT%H%M%S")
+        if not PM3D_ID.match(str(cid)):
+            raise ParamError("id must match [A-Za-z0-9_-]{1,64}")
+        sim = pm3d_holder[sid]
+        cp = sim.checkpoint()
+        arrays = {k: np.asarray(v) for k, v in cp.items()
+                  if k in ("x", "u", "mass", "a", "t")}
+        uid = pm3d_universe.get(sid)
+        if uid is None:
+            raise HTTPException(status_code=409, detail=f"pm3d {sid!r} is not bound to a universe")
+        cprec = multiverse.checkpoint_universe(uid, cid, arrays)
+        return {"id": sid, "universe": uid, "checkpoint_id": cprec.id,
+                "a": float(sim.a), "t": float(sim.t),
+                "path": f"{uid}/{cprec.id}.npz"}
+
+    @app.post("/api/pm3d/{sid}/checkpoints/{cid}/restore")
+    def pm3d_restore(sid: str, cid: str):
+        """Restore a PM3D simulation from its multiverse universe checkpoint."""
+        if not PM3D_ID.match(sid):
+            raise ParamError("invalid pm3d id")
+        if sid not in pm3d_holder:
+            raise HTTPException(status_code=404, detail=f"no pm3d simulation {sid!r}")
+        uid = pm3d_universe.get(sid)
+        if uid is None:
+            raise HTTPException(status_code=409, detail=f"pm3d {sid!r} is not bound to a universe")
+        result = multiverse.restore_checkpoint(uid, cid)
+        arrays = result.get("arrays", {})
+        sim = pm3d_holder[sid]
+        sim.restore({k: (v.item() if v.ndim == 0 else v) for k, v in arrays.items()
+                     if k in ("x", "u", "mass", "a", "t")})
+        from ..core.clocks import cosmic_time_from_scale_factor
+        sim.t = cosmic_time_from_scale_factor(
+            sim.a, sim.cosmology.H0_km_s_Mpc, sim.cosmology.Omega_m,
+            sim.cosmology.Omega_r, sim.cosmology.Omega_Lambda,
+        )
+        with pm3d_lock:
+            pm3d_playback[sid] = {"playing": False, "speed": 1.0, "a_max": 10.0,
+                                  "a_current": float(sim.a), "t_current": float(sim.t)}
+        return {"id": sid, "universe": uid, "state": _pm3d_snapshot_json(sim),
+                "classification": "SIMULATED", "checkpoint_id": cid}
+
+    @app.post("/api/pm3d/switch/{uid}")
+    def pm3d_switch(uid: str, body: dict = Body(default={})):
+        """Switch the active PM3D scientific state to another universe.
+
+        Restores the selected universe's actual PM3D state. Creating another
+        universe never overwrites the first; each universe owns its own
+        cosmology, seed, box size, clock, model configuration and checkpoints.
+        """
+        if not UNIVERSE_ID.match(uid):
+            raise ParamError("invalid universe id")
+        urec = multiverse.get(uid)
+        # Find or create a PM3D sim bound to this universe.
+        sid = None
+        for s, u in pm3d_universe.items():
+            if u == uid:
+                sid = s
+                break
+        if sid is None:
+            # Create a new PM3D sim for this universe from its stored config.
+            ms = urec.model_settings or {}
+            n_mesh = int(ms.get("n_mesh", 16))
+            n_ppax = int(ms.get("n_particles_per_axis", 8))
+            seed = int(urec.seed)
+            a_start = float(urec.cosmology.get("a_start", 0.2))
+            amplitude = float(ms.get("amplitude", 0.02))
+            box_size_Mpc = float(urec.cosmology.get("box_size_Mpc", 100.0))
+            cosmo = Cosmology(H0_km_s_Mpc=float(urec.cosmology["H0_km_s_Mpc"]),
+                              Omega_m=float(urec.cosmology["Omega_m"]),
+                              Omega_r=float(urec.cosmology["Omega_r"]),
+                              Omega_Lambda=float(urec.cosmology["Omega_Lambda"]))
+            x, m = _pm3d_lattice(n_ppax, seed, amplitude)
+            sid = "pm3d-" + uid
+            if sid in pm3d_holder:
+                raise ParamError(f"pm3d simulation {sid!r} already exists")
+            sim = ParticleMesh3D(n=n_mesh, x=x, u=np.zeros_like(x), mass=m,
+                                 cosmology=cosmo, a=a_start, box_size_Mpc=box_size_Mpc)
+            pm3d_holder[sid] = sim
+            pm3d_universe[sid] = uid
+        # Restore the latest checkpoint if one exists.
+        cps = multiverse.list_checkpoints(uid)
+        if cps:
+            latest = cps[-1]
+            result = multiverse.restore_checkpoint(uid, latest.id)
+            arrays = result.get("arrays", {})
+            sim = pm3d_holder[sid]
+            sim.restore({k: (v.item() if v.ndim == 0 else v) for k, v in arrays.items()
+                         if k in ("x", "u", "mass", "a", "t")})
+            from ..core.clocks import cosmic_time_from_scale_factor
+            sim.t = cosmic_time_from_scale_factor(
+                sim.a, sim.cosmology.H0_km_s_Mpc, sim.cosmology.Omega_m,
+                sim.cosmology.Omega_r, sim.cosmology.Omega_Lambda,
+            )
+        with pm3d_lock:
+            pm3d_playback[sid] = {"playing": False, "speed": 1.0, "a_max": 10.0,
+                                  "a_current": float(pm3d_holder[sid].a),
+                                  "t_current": float(pm3d_holder[sid].t)}
+        return {"id": sid, "universe": uid,
+                "state": _pm3d_snapshot_json(pm3d_holder[sid]),
+                "classification": "SIMULATED",
+                "provenance": urec.provenance,
+                "restored_checkpoint": cps[-1].id if cps else None}
 
     app.mount("/js", StaticFiles(directory=STATIC / "js"), name="js")
     app.mount("/css", StaticFiles(directory=STATIC / "css"), name="css")

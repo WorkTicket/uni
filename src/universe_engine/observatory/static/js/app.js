@@ -35,6 +35,10 @@
       this.scientific = false;       // Scientific Simulation mode: renders actual PM3D state
       this.pm3dState = null;         // latest PM3D snapshot from the API
       this.pm3dId = null;
+      this.pm3dPlaying = false;      // continuous PM3D playback
+      this.pm3dSpeed = 1;            // playback speed multiplier
+      this.pm3dAmax = 10.0;          // max scale factor for playback
+      this.pm3dLastStep = 0;         // last real-time step timestamp
       this.resize();
     }
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
@@ -176,6 +180,65 @@
       this.pm3dState = j.state;
       this.simParticles.upload(this.pm3dState);
       return j;
+    }
+
+    // ---- PM3D continuous playback control ----
+    async pm3dPlay(speed = 1, aMax = 10) {
+      if (!this.pm3dId) return null;
+      const r = await fetch("/api/pm3d/" + this.pm3dId + "/play", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speed, a_max: aMax }),
+      });
+      if (!r.ok) throw new Error("pm3d play failed: " + r.status);
+      const j = await r.json();
+      this.pm3dPlaying = true;
+      this.pm3dSpeed = speed;
+      this.pm3dAmax = aMax;
+      this.emit("pm3d-play", j);
+      return j;
+    }
+    async pm3dPause() {
+      if (!this.pm3dId) return null;
+      const r = await fetch("/api/pm3d/" + this.pm3dId + "/pause", { method: "POST" });
+      if (!r.ok) throw new Error("pm3d pause failed: " + r.status);
+      const j = await r.json();
+      this.pm3dPlaying = false;
+      this.emit("pm3d-pause", j);
+      return j;
+    }
+    async pm3dSetSpeed(speed) {
+      if (!this.pm3dId) return null;
+      const r = await fetch("/api/pm3d/" + this.pm3dId + "/speed", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speed }),
+      });
+      if (!r.ok) throw new Error("pm3d speed failed: " + r.status);
+      const j = await r.json();
+      this.pm3dSpeed = speed;
+      return j;
+    }
+    async pm3dStatus() {
+      if (!this.pm3dId) return null;
+      const r = await fetch("/api/pm3d/" + this.pm3dId + "/status");
+      if (!r.ok) return null;
+      const j = await r.json();
+      this.pm3dPlaying = j.playing;
+      this.pm3dState = j;
+      this.simParticles.upload(j);
+      this.t = j.t;
+      return j;
+    }
+
+    // Advance one playback step (called from the render loop when playing).
+    async pm3dTick() {
+      if (!this.pm3dPlaying || !this.pm3dId) return;
+      const now = performance.now();
+      const dt = (now - this.pm3dLastStep) / 1000;
+      this.pm3dLastStep = now;
+      // Each ~50 ms step advances d ln a = 0.002 * speed on the server.
+      try {
+        await this.pm3dStatus();
+      } catch (e) { /* ignore transient errors */ }
     }
     modeOf() { return this.camMode; }
 
@@ -342,6 +405,10 @@
       if (this.playing) {
         this.setS(this.s + dt * this.speed / TOTAL_SECONDS);
         if (this.s >= 1) { this.s = 1; this.t = U.Cosmo.tOfS(1); this.pause(); this.emit("future-end"); }
+      }
+      // PM3D continuous playback (actual solver state)
+      if (this.pm3dPlaying) {
+        this.pm3dTick();
       }
       // local clocks (decoupled from cosmic time so planets and spiral arms move at a watchable pace)
       const kind = this.node.kind, ur = this.userRate;

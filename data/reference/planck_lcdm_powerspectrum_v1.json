@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "cosmology": {
+    "H0_km_s_Mpc": 67.4,
+    "Omega_m": 0.315,
+    "Omega_b": 0.049,
+    "Omega_r": 9.2e-05,
+    "Omega_Lambda": 0.684908,
+    "n_s": 0.965,
+    "sigma8": 0.811,
+    "h": 0.674
+  },
+  "source": "analytic Eisenstein & Hu-like approximation (Planck 2018-like cosmology), not CLASS/CAMB output",
+  "provenance": "Universe Engine reference dataset v1.0; generated internally for offline use",
+  "units": {
+    "k": "h / Mpc",
+    "P_k": "(Mpc / h)^3"
+  },
+  "description": "Linear matter power spectrum at z=0 for a flat LCDM cosmology. Fallback for offline initial-condition generation when CLASS or CAMB is not available.",
+  "checksum_sha256": "4fe5b9adde637a7e5a439a9fc3b9321abbd5d2f3bc14f4a7410311c7f0e045fc",
+  "data_file": "planck_lcdm_powerspectrum_v1.npz",
+  "n_k_points": 2000,
+  "k_min_h_Mpc": 0.0001,
+  "k_max_h_Mpc": 100.0
+}

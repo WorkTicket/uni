@@ -2,57 +2,69 @@
 
 Authoritative, machine-generated numbers: `docs/IMPLEMENTATION_STATUS.json` (regenerate with `python scripts/write_status.py`).
 
-Branch: `feature/fundamental-cosmology` (baseline commit `93713c4`, current HEAD `b10f15b`).
+Branch: `feature/release-b-calibrated-cosmology` (base commit `dc2fd34`, verified).
 
-**Passes 1–6 complete:** future cosmology/timeline (scale factor up to 80, stopAtNow defaults to false), Keplerian orbits with absolute-time ephemeris, frame-rate-independent orbital integration, follow/surface/free/micro camera modes, Galaxy Map (`G`) / Solar System Map (`M`), multiverse manager (versioned JSON+npz checkpoints, branching, isolation), coupled habitat (planet/chemistry/protocells/replicators with mass ledger).
+**Release A foundation preserved:** comoving 3D PM gravity, coordinate transforms, Scientific Simulation mode, 374-test baseline + 1 skipped.
 
-**Release A — Scientific Foundation (this sprint):**
+**Release B — Physically Calibrated 3D Cosmology (this sprint):**
 
-1. **Camera-to-time coupling removed** (`index.html`, `app.js`, `ui.js`):
-   - Removed `btn-now` ("Present") button — navigation never jumps to cosmic time.
-   - Removed `stopAtNow` present-epoch pause — playback continues past `a=1` without stopping.
-   - Removed `setS(U.Cosmo.NOW_S)` / `pause()` from navigation handlers.
-   - `setS()` clamps `s` to [0,1] as a cinematic parameter only; it does not gate cosmic time.
+1. **Physical box units** (`src/universe_engine/solvers/pm3d.py`):
+   - `box_size_Mpc` parameter with explicit conversion to physical SI units.
+   - Separate quantities: dimensionless box-fraction position, comoving distance (Mpc), proper distance (Mpc/meters), peculiar velocity (km/s), comoving mass density (M_sun/Mpc^3), proper mass density, density contrast (dimensionless).
+   - `set_physical_masses()` defines particle masses consistently for a specified cosmological box (Omega_m * rho_crit * box_size_Mpc^3 / N in M_sun).
+   - `snapshot()` reports physical units; backward-compatible code-unit fields preserved.
+   - All 10 existing PM3D tests pass unchanged.
 
-2. **Physical vs comoving coordinate transformations** (`src/universe_engine/cosmos/coordinates.py`, `tests/cosmos/test_coordinates.py`):
-   - `x_proper = a * x_comoving`, `x_comoving = x_proper / a`.
-   - `v_pec = a * dx_comoving/dt`, `v_proper = H * x_proper + v_pec`.
-   - `rho_proper = rho_comoving / a^3`, `p_comoving = a^2 * p_proper`.
-   - Peculiar acceleration: `d(v_pec)/dt = -H * v_pec + g_comoving / a`.
-   - Round-trip consistency tests (11 tests, all pass).
+2. **Cosmological initial conditions** (`src/universe_engine/cosmos/initial_conditions.py`, new):
+   - Versioned reference dataset (`data/reference/planck_lcdm_powerspectrum_v1`) with cosmology, provenance, checksum (sha256 verified at load).
+   - `PowerSpectrum` loads the reference dataset or CLASS/CAMB-style two-column text; neither CLASS nor CAMB required for startup.
+   - Gaussian random fields with Hermitian Fourier symmetry, real-valued density fields, Nyquist cutoff.
+   - Zel'dovich/1LPT displacement + growing-mode velocity field.
+   - Configurable seed, box size, particle count, mesh resolution, starting redshift.
+   - Deterministic per seed; different seeds differ.
 
-3. **3D expanding-universe particle-mesh gravity** (`src/universe_engine/solvers/pm3d.py`, `tests/solvers/test_pm3d.py`):
-   - Comoving KDK integration in `s = ln a` with cosmological drag `2 + dlnH/dlna`.
-   - Force: `-(3/2) Omega_m(a) * grad_x Delta^{-1} delta` (periodic Poisson, FFT, CIC).
-   - Proper time `t(a)` from FLRW background integral (exact, no drift).
-   - Outputs: proper position `a*x`, peculiar velocity `a*H*dx/ds`, physical density `rho_comoving/a^3`.
-   - Checkpoint/restore bitwise at step boundaries.
-   - 10 regression tests: uniform density zero-force, linear growth vs theory, proper time, proper position, peculiar velocity, force symmetry, density mean zero, checkpoint replay.
+3. **Numerical integration** (`pm3d.py` + `tests/solvers/test_pm3d_integration.py`, new):
+   - KDK integrator with analytic-drag treatment (default `kdk_analytic_drag`) — second-order accurate in s=ln a even with non-negligible drag; explicit `kdk_drag` retained.
+   - Validated against an independently implemented RK4 reference; timestep convergence verified.
+   - Error measurements: mass conservation exact (<1e-14), density mean zero (<1e-12), force symmetry (<1e-8), growth error bounded, timestep sensitivity bounded.
 
-4. **Scientific Simulation mode in observatory** (`server.py`, `app.js`, `layers.js`, `shaders.js`, `index.html`, `ui.js`):
-   - `/api/pm3d` (create/step/get) — serves actual PM3D numerical state, labeled `SIMULATED`.
-   - Frontend mode toggle: Illustrative (procedural) vs Scientific Simulation (actual PM3D particle state).
-   - `ScientificParticleLayer` + `simPointVS/simPointFS` shaders render actual particle positions.
-   - Procedural cinematic view preserved as explicitly labeled Illustrative mode.
+4. **Cosmological diagnostics** (`src/universe_engine/cosmos/diagnostics.py`, new):
+   - `measure_power_spectrum`: isotropically binned 3D FFT power spectrum with physical box volume, correct k units, zero mode excluded, Nyquist limit, shot noise reported not subtracted.
+   - `dimensionless_power_spectrum`: Delta^2(k) = k^3 P(k) / (2 pi^2).
+   - `compare_linear_growth`, `cross_seed_statistics`, `resolution_convergence`, `numerical_error_summary`.
+   - 9 tests (analytic Fourier mode peak, dimensionless conversion, PM3D snapshot spectrum, linear growth bounded error, cross-seed identical/different seeds, resolution convergence, error summary).
+
+5. **Live observatory playback** (`observatory/server.py`, `static/js/app.js`, `static/js/ui.js`, `static/index.html`):
+   - `/api/pm3d/{sid}/play`, `/pause`, `/speed`, `/status` — continuous playback with speed and a_max.
+   - Bounded decimated snapshots (max 2000 pts/frame) + density statistics (mean/rms/min/max) — no enormous arrays to JSON every frame.
+   - Display: scale factor, redshift, cosmic age, box size, model parameters, density stats.
+   - Checkpoint/restore via `/api/pm3d/{sid}/checkpoint` and `/checkpoints/{cid}/restore`.
+   - Frontend: play/pause/speed/checkpoint/restore buttons, HUD stats display.
+
+6. **Multiverse integration** (`observatory/server.py`):
+   - PM3D simulations bound to persistent multiverse universe IDs (`pm3d_universe` mapping).
+   - Each universe owns cosmology, seed, box size, physical clock, model config, checkpoints.
+   - Creating another universe does not overwrite the first; universe switching restores actual PM3D state.
+   - Provenance labels: observational (reference cosmology) vs speculative.
+   - `/api/pm3d/switch/{uid}` restores the selected universe's PM3D state.
 
 | Item | Result (measured) |
 |---|---|
-| Tests | 374 passed, 1 skipped |
+| Tests | 389 passed, 1 skipped |
+| PM3D regression tests | 10/10 |
 | Coordinate transform tests | 11/11 |
-| PM3D gravity tests | 10/10 |
-| `universe benchmark hydro` | 106/106 |
+| PM3D integration convergence tests | 6/6 |
+| Diagnostics tests | 9/9 |
 | `universe benchmark gravity` | 40/40 |
 | `universe benchmark nbody` | 37/37 |
-| Observatory API | `/api/lab/*`, `/api/habitat/*`, `/api/brane/*`, `/api/geometry/*`, `/api/origin/events`, `/api/pm3d/*` verified |
-| JS syntax | all `static/js/*.js` files pass `node --check` |
-| Duplicate DOM IDs | none (btn-now removed) |
-| Time jump on navigation | removed (no setS(NOW_S) or pause on navigation) |
-| PM3D API test | create at a=0.2 (t=1.53 Gyr, z=4), step to a=1.0 (t=13.80 Gyr, z≈0), classification SIMULATED |
+| PM3D performance | 145 steps/s (512pt/16^3), 74 steps/s (1728pt/32^3), 9 steps/s (4096pt/64^3/500Mpc) |
+| Observatory PM3D API | create/step/get/play/pause/speed/status/checkpoint/restore/switch verified via TestClient |
+| Multiverse PM3D independence | two universes independent; switch restores state |
 
 ## What this is NOT (read SCIENTIFIC_LIMITS.md)
 
-PM3D uses a synthetic Gaussian initial field (not a Boltzmann/CAMB transfer function); linear-growth validation is approximate (30% tolerance) due to CIC and particle noise. All verified 1D solvers remain periodic and dimensionless. No thermochemistry, radiative transfer, stars, galaxies, planets, or life are simulated. Brane cosmology and higher-dimensional models are speculative research, not established physics. The browser viewer has not been rendered in a real browser in this environment.
+PM3D uses Zel'dovich/1LPT initial conditions from an analytic power spectrum (not CLASS/CAMB by default); no gas, stars, galaxies, planets, or life; beyond shell crossing only conservation is checked; the browser viewer has not been rendered in a real browser.
 
 ## Resume here
 
-Next actions: T04 (ingest CLASS/CAMB transfer functions for physical initial conditions), R4b (validated 3D cosmological gravity with transfer-function ICs), then R5 (thermochemistry). Integration tests in a real Chromium browser and Windows executable packaging verification remain outstanding.
+Next actions: real-browser observatory validation (Task 8), final commit and deliverables (Task 10). Post-Release B: hydrodynamics and halo formation.

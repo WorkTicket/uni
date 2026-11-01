@@ -66,6 +66,46 @@
         pm3dStatus.textContent = "PM3D sim at a=" + app.pm3dState.a.toFixed(3) + " (z=" + app.pm3dState.z.toFixed(2) + ", t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr)";
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
+    $("btn-pm3d-play").addEventListener("click", async () => {
+      if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
+      try {
+        const speed = parseFloat($("pm3d-speed").value) || 1;
+        const aMax = parseFloat($("pm3d-amax").value) || 10;
+        await app.pm3dPlay(speed, aMax);
+        pm3dStatus.textContent = "PM3D playback playing (speed=" + speed + ")";
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
+    $("btn-pm3d-pause").addEventListener("click", async () => {
+      if (!app.pm3dId) return;
+      try {
+        await app.pm3dPause();
+        pm3dStatus.textContent = "PM3D playback paused.";
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
+    $("btn-pm3d-checkpoint").addEventListener("click", async () => {
+      if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
+      try {
+        const cid = "cp-" + Date.now();
+        await fetch("/api/pm3d/" + app.pm3dId + "/checkpoint", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cid }),
+        });
+        pm3dStatus.textContent = "Checkpoint saved: " + cid;
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
+    $("btn-pm3d-restore").addEventListener("click", async () => {
+      if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
+      const cid = prompt("Checkpoint ID to restore:");
+      if (!cid) return;
+      try {
+        const r = await fetch("/api/pm3d/" + app.pm3dId + "/checkpoints/" + cid + "/restore", { method: "POST" });
+        if (!r.ok) throw new Error("restore failed: " + r.status);
+        const j = await r.json();
+        app.pm3dState = j.state;
+        app.simParticles.upload(app.pm3dState);
+        pm3dStatus.textContent = "Restored checkpoint " + cid + " at a=" + j.state.a.toFixed(3);
+      } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
+    });
     $("btn-rand").addEventListener("click", () => { $("seed").value = Math.floor(Math.random() * 1e9); });
     $("btn-new").addEventListener("click", async () => {
       menu.hidden = true; const wasPlaying = app.playing; app.pause();
@@ -166,6 +206,18 @@
       $("t-epoch").textContent = ep.name;
       $("t-temp").textContent = U.fmtTemp(vis.T); $("t-z").textContent = vis.z > 1e4 ? U.fmtSci(vis.z) : vis.z < 0.005 ? "0" : vis.z.toFixed(vis.z < 10 ? 2 : 0);
       $("t-size").textContent = app.uni ? U.fmtDist(app.uni.boxM * vis.a) : "-";
+      // PM3D scientific simulation stats
+      if (app.pm3dState) {
+        const statsEl = $("pm3d-stats");
+        const ds = app.pm3dState.density_stats || {};
+        statsEl.textContent =
+          "a=" + app.pm3dState.a.toFixed(3) +
+          " z=" + app.pm3dState.z.toFixed(2) +
+          " t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr" +
+          " ρ_rms=" + (ds.rms !== undefined ? ds.rms.toFixed(3) : "–") +
+          " pts=" + app.pm3dState.returned_points + "/" + app.pm3dState.n_particles;
+        $("pm3d-play").textContent = app.pm3dPlaying ? "Pause" : "Play";
+      }
       if (document.activeElement !== slider) slider.value = Math.round(app.s * 1000);
       $("ep-name").textContent = ep.name; $("ep-text").textContent = ep.text;
       document.body.classList.toggle("cinema", app.playing && app.node.kind === "universe");

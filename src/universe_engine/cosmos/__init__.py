@@ -19,6 +19,13 @@ from .coordinates import (
     SECONDS_PER_GYR,
     MPC_KM,
 )
+from .initial_conditions import (
+    ReferenceDataset,
+    PowerSpectrum,
+    InitialConditions,
+    generate_initial_conditions,
+    generate_perturbed_lattice,
+)
 
 __all__ = [
     "Frame",
@@ -39,4 +46,9 @@ __all__ = [
     "growth_rate_approx",
     "SECONDS_PER_GYR",
     "MPC_KM",
+    "ReferenceDataset",
+    "PowerSpectrum",
+    "InitialConditions",
+    "generate_initial_conditions",
+    "generate_perturbed_lattice",
 ]
