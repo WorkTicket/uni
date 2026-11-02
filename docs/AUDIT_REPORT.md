@@ -269,6 +269,62 @@ requires capturing and restoring the controller RNG stream position (Python
 `random`, NumPy `bit_generator.state`, and any other stateful RNG) in
 addition to weights. This is a Stage 2 requirement, not a Stage 0 fix.
 
+## 12. Recurrent agent vs reactive policy (Stage 0b.5)
+
+**Script:** `scripts/recurrent_imitates_reactive.py`  
+**Command:** `$env:PYTHONPATH="src"; python scripts/recurrent_imitates_reactive.py`  
+**Machine:** Windows 11 10.0.26100-SP0  
+**Python:** 3.14.5, **NumPy:** 2.5.1  
+**Result holds only for the machine and library versions tested.**
+
+### Question
+Can the recurrent (hidden-state) controller learn to imitate — or exceed — a
+learned feedforward reactive baseline on a memory-required task, under matched
+observations and matched training budgets?
+
+### Controlled budget (fixed before running, matched across agents)
+- 8 independent macro seeds: 1..8
+- 25 training episodes per replicate, 6 held-out evaluation episodes per replicate
+- 40 steps per episode
+- Agents: `ReactiveController` and `RecurrentController` (both trainable, same
+  `SensoryObservation` contract and `AgentAction` space, no privileged state)
+
+### Result — Delayed Cue Task (memory required)
+| Agent | Mean held-out return | 95% CI |
+|---|---|---|
+| Reactive | -0.0829 | [-0.1098, -0.0561] |
+| Recurrent | -0.0871 | [-0.1115, -0.0626] |
+
+Paired difference (recurrent − reactive) per macro seed:
+[-0.025, -0.1, 0.0667, -0.05, 0.0833, 0.0, -0.0083, 0.0]  
+Mean paired difference = -0.0042; 95% CI = [-0.0451, +0.0368] (includes zero).
+
+### Result — Fully observable GridWorld (negative control)
+| Agent | Mean held-out return | 95% CI |
+|---|---|---|
+| Reactive | -0.0758 | [-0.3322, +0.1806] |
+| Recurrent | +0.0905 | [-0.1219, +0.3028] |
+
+(Underpowered at 8 seeds; wide CIs.)
+
+### Positive control (no training)
+`WorkingMemoryOracle` on Delayed Cue: mean = +0.7379 (n=48). Proves the task
+is learnable with memory, so the learned agents' failure is not a task ceiling.
+
+### Finding
+**Recurrent CANNOT learn to imitate or exceed reactive on DelayedCue.** Recurrent
+mean (~-0.0871) ~= reactive mean (~-0.0829); paired 95% CI includes zero. Both
+trained controllers remain near chance on the memory task while the programmed
+oracle solves it. Recurrent therefore does not learn to imitate a *successful*
+reactive policy under the matched budget — reactive itself is not successful.
+
+**Finding label: implementation** — the trainable recurrent implementation does
+not acquire the memory behavior under the matched budget. This is an
+implementation result, not evidence that the task is unsolvable.
+
+Standing disclaimer: functional measures only; does not establish subjective
+experience.
+
 ---
 
 **Gate check (Stage 0):**
