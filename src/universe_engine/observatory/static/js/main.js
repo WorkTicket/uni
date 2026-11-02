@@ -94,7 +94,6 @@
 
       if ($("prog-label")) $("prog-label").textContent = "Ready — " + app.uni.K.toLocaleString() + " halos, seed " + seed;
       if ($("btn-begin")) $("btn-begin").disabled = false;
-      if ($("btn-skip")) $("btn-skip").disabled = false;
 
       let last = performance.now();
       function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; app.update(dt); app.render(); requestAnimationFrame(frame); }
@@ -118,7 +117,7 @@
         begin() { if ($("intro")) $("intro").classList.add("gone"); },
         setT(t) { app.setT(t); }, setS(s) { app.setS(s); },
       };
-      if (q.has("autostart")) { if ($("btn-skip")) $("btn-skip").click(); }
+      if (q.has("autostart")) { if ($("btn-begin")) $("btn-begin").click(); }
 
       loader.hide();
       if (intro) intro.hidden = false;
@@ -136,13 +135,12 @@
     const msg = loader.fail ? loader.fail.textContent : "";
     navigator.clipboard.writeText(msg).then(() => { loader.copy.textContent = "Copied!"; setTimeout(() => { loader.copy.textContent = "Copy error"; }, 1200); });
   });
-  loader.cont.addEventListener("click", () => {
+    loader.cont.addEventListener("click", () => {
     // Skip generation/UI binding issues: reveal the shell and let the user
     // explore what loaded rather than staying stuck on the loader.
     loader.hide();
     if ($("intro")) { $("intro").hidden = false; $("intro").classList.remove("gone"); }
     if ($("btn-begin")) $("btn-begin").disabled = false;
-    if ($("btn-skip")) $("btn-skip").disabled = false;
   });
 
   boot();

@@ -15,14 +15,14 @@ button,input,select{font:inherit;color:inherit}
 [hidden]{display:none!important}
 
 /* ---- canvas wrap ---- */
-#canvas-wrap{grid-row: 2 / 3; grid-column: 1 / -1; position: relative; min-height: 0; overflow: hidden;}
-canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:#000}
+#canvas-wrap{grid-row: 2 / 3; grid-column: 1 / -1; position: relative; min-height: 0;}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;background:#000;z-index:1}
 canvas#gl.dragging{cursor:grabbing}
 canvas#gl.pointing{cursor:pointer}
 
 /* ---- sidebars ---- */
-#sidebar-left{grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-right: 1px solid var(--line); background: var(--glass2);}
-#sidebar-right{grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-left: 1px solid var(--line); background: var(--glass2);}
+#sidebar-left{grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-right: 1px solid var(--line); background: var(--glass2); position: relative; z-index: 10;}
+#sidebar-right{grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-left: 1px solid var(--line); background: var(--glass2); position: relative; z-index: 10;}
 
 /* ---- dock ---- */
 #dock{grid-column: 1 / -1; grid-row: 3 / 4; position: sticky; bottom: 0; z-index: 10; width: 100%; display: flex; align-items: center; gap: 14px; padding: 12px 16px;}

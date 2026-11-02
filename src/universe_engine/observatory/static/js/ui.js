@@ -202,11 +202,10 @@
       renderObjectExplorer(); drawInfo();
     });
     function progress(f, label) { $("prog-bar").style.width = (f * 100).toFixed(0) + "%"; if (label) $("prog-label").textContent = label + "…"; }
-    function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; $("btn-skip").disabled = true; } }
+    function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; } }
     function fail(e) { const el = $("intro-err"); el.hidden = false; el.textContent = String(e && e.message || e); console.error(e); }
     ui.progress = progress; ui.fail = fail;
     $("btn-begin").addEventListener("click", () => { app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.pause(); });
-    $("btn-skip").addEventListener("click", () => { app.homeView(); app.setS(U.Cosmo.NOW_S); showIntro(false); app.pause(); });
 
     // ---- input ----
     let drag = null; const pointers = new Map(); let pinch = 0, moved = 0;
