@@ -75,16 +75,17 @@
   },
   "next_action": "Release A: validate 3D PM cosmology against linear-growth benchmarks (done), connect observatory Scientific mode to live PM3D state (done), then T04: ingest CLASS/CAMB transfer functions for physical initial conditions. Next phase: R4b (validated 3D cosmological gravity) then R5 (thermochemistry).",
   "next_phase": "R4b (3D cosmological gravity with transfer-function ICs) then R5",
-  "updated_utc": "2026-11-02T03:14:11+00:00",
-  "head_commit": "b7ea0d6c74a8ca5b3f24d782a9c26d66f7ffbf9a",
-  "repo_revision_at_generation": "b7ea0d6c74a8ca5b3f24d782a9c26d66f7ffbf9a",
+  "updated_utc": "2026-11-02T04:05:05+00:00",
+  "tested_source_revision": "8c1f003ee27aed321e143c0426bc5e01e5257fb5",
+  "head_commit": "8c1f003ee27aed321e143c0426bc5e01e5257fb5",
+  "repo_revision_at_generation": "8c1f003ee27aed321e143c0426bc5e01e5257fb5",
   "test_command": "PYTHONPATH=src python -m pytest -q",
   "test_counts": {
-    "passed": 528,
-    "failed": 0,
+    "passed": 529,
+    "failed": 1,
     "skipped": 1
   },
-  "test_summary_line": "528 passed, 1 skipped, 1 warning in 331.61s (0:05:31)",
+  "test_summary_line": "1 failed, 529 passed, 1 skipped, 1 warning in 563.14s (0:09:23)",
   "test_counts_source": "real pytest run output (never hand-edited)",
   "per_seed_failures": [
     {
@@ -156,7 +157,7 @@
   "benchmarks": {
     "hydro": {
       "exit_code": 0,
-      "run_id": "20261102T031401Z",
+      "run_id": "20261102T040447Z",
       "checks": "106/106",
       "benchmarks": [
         {
@@ -203,7 +204,7 @@
     },
     "gravity": {
       "exit_code": 0,
-      "run_id": "20261102T031409Z",
+      "run_id": "20261102T040503Z",
       "checks": "40/40",
       "benchmarks": [
         {
@@ -235,7 +236,7 @@
     },
     "nbody": {
       "exit_code": 0,
-      "run_id": "20261102T031410Z",
+      "run_id": "20261102T040504Z",
       "checks": "37/37",
       "benchmarks": [
         {
