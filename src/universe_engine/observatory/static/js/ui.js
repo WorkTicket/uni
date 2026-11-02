@@ -28,11 +28,15 @@
     app.on("playback-changed", () => { updatePlaybackUI(); });
     app.on("horizon-reached", () => { updatePlaybackUI(); showHorizonNotice(); });
     app.on("horizon-extended", (r) => { updatePlaybackUI(); showHorizonNotice(r); });
+    // Safe binding: skip elements that are not present in the shell so a
+    // missing DOM node can never abort the boot sequence (Bug H).
+    function bind(id, ev, fn) { const el = $(id); if (el) el.addEventListener(ev, fn); }
     $("btn-step-back").addEventListener("click", () => { app.stepBackward(); });
     $("btn-step-fwd").addEventListener("click", () => { app.stepForward(); });
     // Playback presets: Paused / Observe / Explore / Fast Forward / Custom / Cinematic Tour.
     const speedSeg = $("speed");
     function renderPresets() {
+      if (!speedSeg) return; // speed segment not present in this shell
       speedSeg.innerHTML = "";
       const names = app.playback.presetNames();
       names.forEach((key) => {
@@ -87,7 +91,7 @@
       }
     }
     $("btn-home").addEventListener("click", () => { app.homeView(); });
-    $("btn-dive").addEventListener("click", () => startDive());
+    bind("btn-dive", "click", () => startDive());
     function startDive() { app.planDive((Date.now() & 0xffff) ^ app.seed); }
     // ---- horizon extension ----
     const horizonInfo = $("horizon-info"), horizonVal = $("horizon-val"), horizonT = $("horizon-t");
@@ -100,7 +104,7 @@
       horizonInfo.hidden = false;
     }
     updateHorizonDisplay();
-    $("btn-extend-horizon").addEventListener("click", () => {
+    bind("btn-extend-horizon", "click", () => {
       const v = parseFloat($("horizon-a").value);
       if (!Number.isFinite(v) || v <= 0) { $("horizon-a").focus(); return; }
       try {
@@ -109,7 +113,7 @@
         else { alert("Cannot extend horizon: " + r.error); }
       } catch (e) { alert("Extend horizon failed: " + e.message); }
     });
-    $("btn-reset-horizon").addEventListener("click", () => {
+    bind("btn-reset-horizon", "click", () => {
       try {
         const r = app.extendHorizon(80);
         updateHorizonDisplay(); updatePlaybackUI(); showHorizonNotice(r);
@@ -117,10 +121,10 @@
     });
     // ---- menu ----
     const menu = $("menu");
-    $("btn-menu").addEventListener("click", () => { menu.hidden = !menu.hidden; });
-    $("opt-labels").addEventListener("change", (e) => { ui.labels = e.target.checked; });
-    $("opt-orbits").addEventListener("change", (e) => { ui.orbits = e.target.checked; app.orbits = e.target.checked; });
-    $("opt-motion").addEventListener("change", (e) => { app.userRate = e.target.checked ? 1 : 0; });
+    bind("btn-menu", "click", () => { menu.hidden = !menu.hidden; });
+    bind("opt-labels", "change", (e) => { ui.labels = e.target.checked; });
+    bind("opt-orbits", "change", (e) => { ui.orbits = e.target.checked; app.orbits = e.target.checked; });
+    bind("opt-motion", "change", (e) => { app.userRate = e.target.checked ? 1 : 0; });
     document.querySelectorAll("#quality button").forEach((b) => b.addEventListener("click", () => {
       document.querySelectorAll("#quality button").forEach((x) => x.classList.toggle("on", x === b)); app.pendingQuality = b.dataset.q;
     }));
@@ -131,7 +135,7 @@
     }));
     // PM3D simulation controls
     const pm3dStatus = $("pm3d-status");
-    $("btn-pm3d-create").addEventListener("click", async () => {
+    bind("btn-pm3d-create", "click", async () => {
       const seed = parseInt($("pm3d-seed").value, 10) || 42;
       try {
         pm3dStatus.textContent = "Creating PM3D simulation…";
@@ -141,7 +145,7 @@
         document.querySelectorAll("#view-mode button").forEach((x) => x.classList.toggle("on", x.dataset.m === "scientific"));
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-pm3d-step").addEventListener("click", async () => {
+    bind("btn-pm3d-step", "click", async () => {
       if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
       try {
         pm3dStatus.textContent = "Advancing simulation…";
@@ -149,7 +153,7 @@
         pm3dStatus.textContent = "PM3D sim at a=" + app.pm3dState.a.toFixed(3) + " (z=" + app.pm3dState.z.toFixed(2) + ", t=" + app.pm3dState.t_Gyr.toFixed(2) + " Gyr)";
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-pm3d-play").addEventListener("click", async () => {
+    bind("btn-pm3d-play", "click", async () => {
       if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
       try {
         const speed = parseFloat($("pm3d-speed").value) || 1;
@@ -158,14 +162,14 @@
         pm3dStatus.textContent = "PM3D playback playing (speed=" + speed + ")";
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-pm3d-pause").addEventListener("click", async () => {
+    bind("btn-pm3d-pause", "click", async () => {
       if (!app.pm3dId) return;
       try {
         await app.pm3dPause();
         pm3dStatus.textContent = "PM3D playback paused.";
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-pm3d-checkpoint").addEventListener("click", async () => {
+    bind("btn-pm3d-checkpoint", "click", async () => {
       if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
       try {
         const cid = "cp-" + Date.now();
@@ -176,7 +180,7 @@
         pm3dStatus.textContent = "Checkpoint saved: " + cid;
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-pm3d-restore").addEventListener("click", async () => {
+    bind("btn-pm3d-restore", "click", async () => {
       if (!app.pm3dId) { pm3dStatus.textContent = "Create a simulation first."; return; }
       const cid = prompt("Checkpoint ID to restore:");
       if (!cid) return;
@@ -189,8 +193,8 @@
         pm3dStatus.textContent = "Restored checkpoint " + cid + " at a=" + j.state.a.toFixed(3);
       } catch (e) { pm3dStatus.textContent = "Error: " + e.message; console.error(e); }
     });
-    $("btn-rand").addEventListener("click", () => { $("seed").value = Math.floor(Math.random() * 1e9); });
-    $("btn-new").addEventListener("click", async () => {
+    bind("btn-rand", "click", () => { $("seed").value = Math.floor(Math.random() * 1e9); });
+    bind("btn-new", "click", async () => {
       menu.hidden = true; const wasPlaying = app.playing; app.pause();
       if (app.pendingQuality) { app.setQuality(app.pendingQuality); app.pendingQuality = null; }
       showIntro(true);

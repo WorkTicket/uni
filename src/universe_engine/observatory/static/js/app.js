@@ -26,7 +26,7 @@
   class PlaybackController {
     constructor(app) {
       this.app = app;
-      this.preset = "paused";
+      this.presetName = "paused";
       this.rate = 0;                 // simulated seconds per wall-clock second
       this.customRate = 1;           // user-defined valid rate (sim seconds / wall second)
       this.playing = false;
@@ -37,7 +37,7 @@
     preset(key) { return PLAYBACK_PRESETS[key] || PLAYBACK_PRESETS.paused; }
     setPreset(key) {
       const p = this.preset(key);
-      this.preset = key;
+      this.presetName = key;
       this.rate = key === "custom" ? this.customRate : p.rate;
       this.applyRate();
       return { preset: key, rate: this.rate, label: p.label, cinematic: !!p.cinematic, playing: this.playing };
@@ -46,14 +46,14 @@
       const r = Number(rate);
       if (!Number.isFinite(r) || r < 0) throw new Error("playback rate must be a non-negative number");
       this.customRate = r;
-      if (this.preset === "custom") this.rate = r;
+      if (this.presetName === "custom") this.rate = r;
       this.applyRate();
       return { preset: "custom", rate: this.rate };
     }
     setRate(rate) { return this.setCustomRate(rate); }
     applyRate() {
       this.app.speed = this.rate; // app.render loop uses this.app.speed as the time advance factor
-      this.app.emit("playback-changed", { preset: this.preset, rate: this.rate, playing: this.playing });
+      this.app.emit("playback-changed", { preset: this.presetName, rate: this.rate, playing: this.playing });
     }
     play() {
       if (this.app.U.Cosmo.atBoundary()) {
@@ -111,6 +111,7 @@
 
   class App {
     constructor(canvas, opts) {
+      this.U = U;
       this.canvas = canvas; this.opts = opts || {};
       const { gl, hdr } = U.GL.create(canvas); this.gl = gl; this.hdr = hdr;
       this.R = { gl }; this.post = new U.GL.Post(gl); this.post.fmt = hdr ? "hdr" : "ldr";
@@ -180,7 +181,7 @@
     // Expose playback controller for the UI.
     getPlaying() { return this.playback.playing; }
     getRate() { return this.playback.rate; }
-    getPreset() { return this.playback.preset; }
+    getPreset() { return this.playback.presetName; }
 
     play() { return this.playback.play(); }
     pause() { return this.playback.pause(); }
@@ -245,6 +246,33 @@
       const camA = V.add(this.pos, this.node.posIn(ca));
       this.pos = V.sub(camA, n.posIn(ca));
       this.setNode(n); this.recenter = 1.6;
+      // Bug B: on entering a star system, set a level-appropriate playback rate so
+      // the innermost planet's orbit takes at least 30 wall-seconds. Zooming alone
+      // never changes the clock; this is an explicit level transition.
+      this.applySystemRate(n);
+    }
+    // Speed advisor: suggested rate (sim seconds per wall second) so that the
+    // innermost planet of the focused star system completes one orbit in at least
+    // minOrbitSec wall seconds. Returns 0 (keep current) when not in a system.
+    systemRateFor(node, minOrbitSec = 30) {
+      const chain = node.chain();
+      const star = chain.find((n) => n.kind === "star");
+      if (!star) return 0;
+      const planets = (star.children || []).filter((p) => !p.data.moon && p.data && p.data.P);
+      if (planets.length === 0) return 0;
+      let pMin = Infinity;
+      for (const p of planets) { if (p.data.P < pMin) pMin = p.data.P; }
+      if (!Number.isFinite(pMin) || pMin <= 0) return 0;
+      // rate = sim seconds per wall second so pMin sim seconds = minOrbitSec wall seconds
+      const rate = pMin / minOrbitSec;
+      return Number.isFinite(rate) ? Math.max(1, rate) : 0;
+    }
+    applySystemRate(node) {
+      const rate = this.systemRateFor(node);
+      if (rate > 0) {
+        this.playback.setCustomRate(rate);
+        this.emit("system-rate", { rate, minOrbitSec: 30 });
+      }
     }
     popOut() {
       const n = this.node; if (!n.parent) return;
