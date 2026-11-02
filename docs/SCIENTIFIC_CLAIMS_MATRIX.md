@@ -37,6 +37,7 @@ Each row: claim, mathematical validity, empirical validation, evidence path/comm
 | Delayed-cue recurrent −0.06 > reactive −0.21 | Empirical, thin | Single/limited result; **insufficient for a claim** (≥20-seed paired CI not yet done) | `research/diagnostics/memory_tasks.py` | Illustrative |
 | No reliable memory/world-model advantage | Empirical, 15 macro-seeds | CI [−0.138, +0.269] includes zero; Cohen's d reported | `docs/SPRINT_12_FINDINGS.md`, Phase 2 | Illustrative |
 | Task-conditioned ECS-IW advantage | Hypothesis | Advantage only when task requires temporal integration | Sprint 11/12 findings | Hypothesis |
+| Trainable memory agent solves delayed_cue / occluded_target | Empirical, FAILED | `test_trainable_agents_fail_memory_tasks`; mean < +0.2 delayed_cue; mean ≈ −1.0 occluded_target | `tests/research/test_memory_oracle.py` | learning failure, not demonstrated; not relabeled as oracle success |
 
 ## Persistent organism (Sprint 12)
 
@@ -80,6 +81,7 @@ Each row: claim, mathematical validity, empirical validation, evidence path/comm
 | Scientific Simulation mode = PM3D state | Simulated | Renders actual PM3D particle state from `/api/pm3d` | `server.py`, `simParticles` layer | Simulated |
 | "Whole history Planck→galaxies" | Illustrative | Procedural; no CMB/CLASS/CAMB, no N-body galaxy formation | README §Scientific status | Illustrative |
 | Viewer rendered in real browser | — | **NOT DONE**; only Node execution against real data | status_static.json | Not tested |
+| Connected Mind Inspector UI | — | no graphical Mind Inspector test executed; endpoints exist but no open-planet→habitat→organism→follow→inspect-memory flow | `tests/observatory/test_organism_endpoints.py` | UI is a 3D universe-viewer HUD; no graphical Mind Inspector | NOT_TESTED (no browser E2E) |
 | 20-step E2E on Windows | — | **NOT TESTED**; no desktop executable built/run | status_static.json, README | Not tested |
 
 ## Overall
