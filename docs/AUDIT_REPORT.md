@@ -318,12 +318,36 @@ trained controllers remain near chance on the memory task while the programmed
 oracle solves it. Recurrent therefore does not learn to imitate a *successful*
 reactive policy under the matched budget — reactive itself is not successful.
 
-**Finding label: implementation** — the trainable recurrent implementation does
-not acquire the memory behavior under the matched budget. This is an
-implementation result, not evidence that the task is unsolvable.
+**Finding label: UNRESOLVED: implementation or optimization.** The data distinguish neither cause; diagnostic
+evidence (gradient flow, recurrent-state persistence, supervised cue retention, training curves) is required before
+the failure can be attributed to either. This is not evidence that the task is unsolvable, nor that the architecture
+is incapable.
 
 Standing disclaimer: functional measures only; does not establish subjective
 experience.
+
+### 12b. Learning diagnostics (Stage 0b.5b) — why the recurrent controller failed
+
+**Script:** `scripts/recurrent_learning_diagnostics.py`  
+**Command:** `$env:PYTHONPATH="src"; python scripts/recurrent_learning_diagnostics.py`  
+**Target:** historical research revision (`7f4f09b`, Sprint 13)  
+**Machine:** Windows 11 10.0.26100-SP0, Python 3.14.5, NumPy 2.5.1  
+**Result holds only for the machine and library versions tested.**
+
+| Check | Result |
+|---|---|
+| Gradient flow / parameter updates | Only `W_out` (output layer) changes during learning (max Δ 5.7e-4); `W_x` and `W_h` (recurrent weights) are **frozen at initialization** (Δ 0.0). The recurrent controller cannot learn temporal dependencies because its recurrent weights are never updated. |
+| Hidden-state persistence | Hidden state persists within an episode (mean step Δ 0.099) but is **not reset at episode boundaries** — it carries into the next episode when the same controller is reused. |
+| Supervised binary-cue retention | Output layer **can** learn the cue→action map under supervision (loss 1.35 → 0.37, held-out move agreement 1.0). |
+| Training-budget sweep (DelayedCue) | Recurrent improves with budget (n=25: −0.1017; n=1600: −0.0700) but 95% CI still overlaps reactive (−0.0967). Reactive is flat across all budgets (not trainable). |
+| Training-budget sweep (GridWorld, fully observable) | Recurrent improves (n=25: +0.2022; n=1600: +0.4447; CI [0.1833, +0.7060] clearly above reactive −0.1035). GridWorld is fully observable, so this is **not** a memory advantage — it confirms the architecture can learn given sufficient budget on a non-memory task. |
+| Supervised imitation of reactive GridWorld | Loss decreases (1.40 → 0.85) but held-out action agreement is only 0.67 — does **not** reliably transfer. |
+
+**Diagnostic conclusion:** The recurrent failure is best explained by an **implementation limitation** (recurrent weights `W_x`/`W_h` frozen; hidden state not reset at episode boundaries), consistent with "UNRESOLVED: implementation or optimization." However, because the diagnosis itself is a single diagnostic run and the optimization dimension (learning rate, architecture capacity, reward shaping) was not swept, the finding remains UNRESOLVED rather than definitively attributed. A definitive attribution would require sweeping the optimization space and retraining with trainable recurrent weights.
+
+This does not change the 0b.5 result: the recurrent controller did not learn to imitate or exceed reactive on the memory-required DelayedCue task under the matched budget.
+
+Standing disclaimer: functional measures only; does not establish subjective experience.
 
 ---
 
