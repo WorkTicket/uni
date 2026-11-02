@@ -26,7 +26,7 @@
   class PlaybackController {
     constructor(app) {
       this.app = app;
-      this.preset = "paused";
+      this.presetName = "paused";
       this.rate = 0;                 // simulated seconds per wall-clock second
       this.customRate = 1;           // user-defined valid rate (sim seconds / wall second)
       this.playing = false;
@@ -37,7 +37,7 @@
     preset(key) { return PLAYBACK_PRESETS[key] || PLAYBACK_PRESETS.paused; }
     setPreset(key) {
       const p = this.preset(key);
-      this.preset = key;
+      this.presetName = key;
       this.rate = key === "custom" ? this.customRate : p.rate;
       this.applyRate();
       return { preset: key, rate: this.rate, label: p.label, cinematic: !!p.cinematic, playing: this.playing };
@@ -46,14 +46,14 @@
       const r = Number(rate);
       if (!Number.isFinite(r) || r < 0) throw new Error("playback rate must be a non-negative number");
       this.customRate = r;
-      if (this.preset === "custom") this.rate = r;
+      if (this.presetName === "custom") this.rate = r;
       this.applyRate();
       return { preset: "custom", rate: this.rate };
     }
     setRate(rate) { return this.setCustomRate(rate); }
     applyRate() {
       this.app.speed = this.rate; // app.render loop uses this.app.speed as the time advance factor
-      this.app.emit("playback-changed", { preset: this.preset, rate: this.rate, playing: this.playing });
+      this.app.emit("playback-changed", { preset: this.presetName, rate: this.rate, playing: this.playing });
     }
     play() {
       if (this.app.U.Cosmo.atBoundary()) {
@@ -111,7 +111,7 @@
 
   class App {
     constructor(canvas, opts) {
-      this.canvas = canvas; this.opts = opts || {};
+      this.canvas = canvas; this.opts = opts || {}; this.U = U;
       const { gl, hdr } = U.GL.create(canvas); this.gl = gl; this.hdr = hdr;
       this.R = { gl }; this.post = new U.GL.Post(gl); this.post.fmt = hdr ? "hdr" : "ldr";
       this.web = new U.Layers.WebLayer(this.R); this.sprites = new U.Layers.GalaxySprites(this.R);
@@ -161,7 +161,7 @@
       this.pos = [d * Math.cos(pit) * Math.sin(yaw), d * Math.sin(pit), d * Math.cos(pit) * Math.cos(yaw)];
       this.q = this.lookQ(this.pos, [0, 0, 0]); this.zoomAcc = 0; this.autopilot = null;
     }
-    setNode(n) { this.node = n; this.emit("focus", n); }
+    setNode(n) { this.node = n; this.applySystemRate(); this.emit("focus", n); }
     resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2) * (QUALITY[this.quality].scale || 1);
       const w = Math.max(2, Math.floor(this.canvas.clientWidth * dpr)), h = Math.max(2, Math.floor(this.canvas.clientHeight * dpr));
@@ -192,6 +192,22 @@
     jumpToPresent() { this.pause(); this.setT(this.U.Cosmo.tOfA(1)); }
     jumpToFuture(fraction = 0.5) { this.pause(); const aMax = this.U.Cosmo.a_max; const tMax = this.U.Cosmo.tOfA(aMax); const tNow = this.U.Cosmo.tOfA(1); this.setT(tNow + U.clamp(fraction, 0, 1) * (tMax - tNow)); }
     setSpeed(speed) { this.playback.setRate(speed); }
+
+    // Level-appropriate animation rate for the local (non-cosmic) clocks that
+    // spin planets and spiral arms. A fixed YEAR/70 makes distant galaxies spin
+    // far too fast; scale by distance/kind so the viewer stays watchable at
+    // every zoom level (Bug B).
+    systemRateFor(kind) {
+      switch (kind) {
+        case "star":   return YEAR / 28;   // one turn per ~28 simulated years at native rate
+        case "planet": return YEAR / 90;   // planets: slower, watchable
+        case "moon":   return YEAR / 420;  // moons: slowest
+        default:       return YEAR / 160;  // generic body
+      }
+    }
+    applySystemRate() {
+      this.sysRate = this.systemRateFor(this.node && this.node.kind);
+    }
 
     // Extend the validated future horizon and resume from the current state.
     extendHorizon(new_a_max) {
@@ -599,6 +615,7 @@
     // ---- frame ------------------------------------------------------------------------------------------
     update(dt) {
       this.time += dt;
+      this.applySystemRate();
       // cosmic clock: driven by the presentation playback controller, never by navigation.
       this.playback.advance(dt);
       this.t = this.U.Cosmo.t;
@@ -609,7 +626,7 @@
       }
       // local clocks (decoupled from cosmic time so planets and spiral arms move at a watchable pace)
       const kind = this.node.kind, ur = this.userRate;
-      this.spin += dt * 0.012 * ur; this.sysClk += dt * (YEAR / 70) * ur; this.spinClk += dt * 2400 * ur;
+      this.spin += dt * 0.012 * ur; this.sysClk += dt * this.sysRate * ur; this.spinClk += dt * 2400 * ur;
       // autopilot
       if (this.autopilot) this.stepAutopilot(dt);
       // zoom

@@ -212,6 +212,12 @@ def create_app(save_dir="runs/observatory"):
     def cosmology():
         return load_cosmology()
 
+    @app.get("/health")
+    def health():
+        """Liveness probe used by the staged loader. Returns ok when the server
+        is up and able to serve the observatory shell. Safe to poll repeatedly."""
+        return {"ok": True, "service": "universe-observatory"}
+
     @app.get("/api/presets")
     def presets():
         return {k: {"doc": v["doc"], "defaults": v["defaults"], "limits": v["limits"]} for k, v in PRESETS.items()}

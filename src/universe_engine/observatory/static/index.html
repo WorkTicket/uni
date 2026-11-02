@@ -174,6 +174,29 @@
   </div>
 </div>
 
+<!-- Staged loader overlay (Bug H fix): shows readiness steps and, on failure,
+     offers Retry / Copy error / Continue without guide so the viewer never
+     dead-locks on "Preparing…". Controlled from main.js via U.loader.* -->
+<div id="loader-overlay" class="glass intro-card" hidden>
+  <div class="logo big" aria-hidden="true"></div>
+  <h1>Universe Observatory</h1>
+  <p class="lead">Loading the observatory…</p>
+  <div id="loader-steps">
+    <div class="step" id="loader-step-1"><span class="n">1</span><span class="t">Server reachable</span></div>
+    <div class="step" id="loader-step-2"><span class="n">2</span><span class="t">WebGL2 context</span></div>
+    <div class="step" id="loader-step-3"><span class="n">3</span><span class="t">World generated</span></div>
+    <div class="step" id="loader-step-4"><span class="n">4</span><span class="t">UI bound</span></div>
+    <div class="step" id="loader-step-5"><span class="n">5</span><span class="t">Ready</span></div>
+  </div>
+  <div id="loader-prog-label" class="fine">Starting…</div>
+  <div id="loader-fail" class="err" hidden></div>
+  <div class="row center" id="loader-actions" hidden>
+    <button id="btn-loader-retry" class="pill big">Retry</button>
+    <button id="btn-loader-copy" class="pill big">Copy error</button>
+    <button id="btn-loader-continue" class="pill accent big">Continue without guide</button>
+  </div>
+</div>
+
 <script src="js/util.js"></script>
 <script src="js/cosmo.js"></script>
 <script src="js/camera.js"></script>
