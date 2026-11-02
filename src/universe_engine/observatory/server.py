@@ -211,6 +211,17 @@ def create_app(save_dir="runs/observatory"):
     def cosmology():
         return load_cosmology()
 
+    @app.get("/health")
+    def health():
+        """Health endpoint polled by the staged loader. Reports whether the
+        observatory backend is reachable and able to serve state."""
+        return {
+            "status": "ok",
+            "version": "0.1.0",
+            "endpoints": ["/api/cosmology", "/api/state", "/api/session", "/api/saves", "/api/habitat", "/api/organism", "/api/pm3d"],
+            "time": time.time(),
+        }
+
     @app.get("/api/presets")
     def presets():
         return {k: {"doc": v["doc"], "defaults": v["defaults"], "limits": v["limits"]} for k, v in PRESETS.items()}
