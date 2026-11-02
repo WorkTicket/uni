@@ -109,6 +109,20 @@
     },
     D(a) { return interp(state.D, Math.log(a)); },
     Dt(t) { return API.D(API.aOfT(t)); },
+    // a(D): inverse of the monotonic growth factor D(a). Returns the scale
+    // factor a at which the linear growth factor reaches D (clamped to table).
+    // Required by catalog.js for star formation times.
+    aOfD(D) {
+      if (!state.built) build();
+      const Ds = state.D, las = state.lna;
+      if (Ds.length < 2) return Math.exp(las[0] || 0);
+      if (D <= Ds[0]) return Math.exp(las[0]);
+      if (D >= Ds[Ds.length - 1]) return Math.exp(las[las.length - 1]);
+      let lo = 0, hi = Ds.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (Ds[mid] <= D) lo = mid; else hi = mid; }
+      const f = (D - Ds[lo]) / (Ds[hi] - Ds[lo] || 1);
+      return Math.exp(las[lo] + (las[hi] - las[lo]) * f);
+    },
     // Background temperature T = T0 / a. Always positive for finite a; never 0.
     TofA(a) { return P.T0 / a; },
     // Cosmological redshift z = 1/a - 1. Negative in the future for a > 1 (not clamped to zero).

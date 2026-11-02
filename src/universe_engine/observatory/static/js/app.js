@@ -206,7 +206,18 @@
       }
     }
     applySystemRate() {
-      this.sysRate = this.systemRateFor(this.node && this.node.kind);
+      const node = this.node;
+      if (node && node.kind === "star" && node.children) {
+        const planets = node.children.filter(p => p.data && !p.data.moon && Number.isFinite(p.data.P));
+        if (planets.length) {
+          const pMin = Math.min(...planets.map(p => p.data.P));
+          // At normal playback, the innermost planet's orbit takes pMin / sysRate wall
+          // seconds. Set sysRate so this is at least 30 seconds (Bug B).
+          this.sysRate = pMin / 30;
+          return;
+        }
+      }
+      this.sysRate = this.systemRateFor(node && node.kind);
     }
 
     // Extend the validated future horizon and resume from the current state.
