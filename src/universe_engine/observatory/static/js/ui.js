@@ -198,14 +198,24 @@
       if (app.pendingQuality) { app.setQuality(app.pendingQuality); app.pendingQuality = null; }
       showIntro(true);
       try { await app.generate(parseInt($("seed").value, 10) || 0, progress); } catch (e) { fail(e); return; }
-      $("prog-label").textContent = "Ready"; app.setS(0); $("btn-begin").disabled = false; $("btn-skip").disabled = false;
+      $("prog-label").textContent = "Ready"; app.setS(0); $("btn-begin").disabled = false;
       renderObjectExplorer(); drawInfo();
     });
     function progress(f, label) { $("prog-bar").style.width = (f * 100).toFixed(0) + "%"; if (label) $("prog-label").textContent = label + "…"; }
     function showIntro(on) { const i = $("intro"); i.classList.toggle("gone", !on); if (on) { $("btn-begin").disabled = true; } }
     function fail(e) { const el = $("intro-err"); el.hidden = false; el.textContent = String(e && e.message || e); console.error(e); }
     ui.progress = progress; ui.fail = fail;
-    $("btn-begin").addEventListener("click", () => { app.homeView(); app.setS(0); showIntro(false); app.reachedNow = false; app.pause(); });
+    $("btn-begin").addEventListener("click", async () => {
+      showIntro(false); app.reachedNow = false; app.pause();
+      try {
+        const seed = parseInt($("seed").value, 10) || 42;
+        const simId = "sim-" + Date.now();
+        await app.pm3dCreate(simId, seed, 16, 8, 0.2, 2.0, 0.02);
+        app.setScientific(true);
+        app.t = app.pm3dState && Number.isFinite(app.pm3dState.t) ? app.pm3dState.t : app.U.Cosmo.t;
+        app.syncScrubber();
+      } catch (e) { console.error("Begin Simulation failed", e); }
+    });
 
     // ---- input ----
     let drag = null; const pointers = new Map(); let pinch = 0, moved = 0;

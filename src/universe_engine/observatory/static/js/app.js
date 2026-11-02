@@ -56,7 +56,7 @@
       this.app.emit("playback-changed", { preset: this.presetName, rate: this.rate, playing: this.playing });
     }
     play() {
-      if (this.app.U.Cosmo.atBoundary()) {
+      if (this.app.U.Cosmo.atBoundary() && !this.app.scientific) {
         // At the horizon: do not auto-resume; require an explicit horizon extension.
         this.playing = false;
         this.applyRate();
@@ -66,12 +66,20 @@
       this.playing = true;
       this.applyRate();
       this.app.emit("play", true);
+      // In scientific PM3D mode, start server-side PM3D playback.
+      if (this.app.scientific && this.app.pm3dId) {
+        this.app.pm3dPlay(this.rate, this.app.pm3dAmax).catch(() => {});
+      }
       return { playing: true, rate: this.rate };
     }
     pause() {
       this.playing = false;
       this.applyRate();
       this.app.emit("play", false);
+      // In scientific PM3D mode, pause server-side PM3D playback.
+      if (this.app.scientific && this.app.pm3dId) {
+        this.app.pm3dPause().catch(() => {});
+      }
       return { playing: false };
     }
     toggle() { return this.playing ? this.pause() : this.play(); }
@@ -79,6 +87,16 @@
     advance(dt) {
       if (!this.playing || this.rate <= 0) return false;
       const app = this.app;
+      // In scientific PM3D mode, the PM3D solver drives the clock (server-side
+      // playback worker). Do not advance the background lookup table here.
+      if (app.scientific && app.pm3dId) {
+        // Sync app.t from the latest PM3D state polled by pm3dTick().
+        if (app.pm3dState && Number.isFinite(app.pm3dState.t)) {
+          app.t = app.pm3dState.t;
+          app.syncScrubber();
+        }
+        return true;
+      }
       const cosmo = app.U.Cosmo;
       const dSim = dt * this.rate; // simulated seconds
       if (dSim <= 0) return false;
@@ -629,7 +647,7 @@
       this.applySystemRate();
       // cosmic clock: driven by the presentation playback controller, never by navigation.
       this.playback.advance(dt);
-      this.t = this.U.Cosmo.t;
+      if (!this.scientific) { this.t = this.U.Cosmo.t; }
       this.syncScrubber();
       // PM3D continuous playback (actual solver state)
       if (this.pm3dPlaying) {
