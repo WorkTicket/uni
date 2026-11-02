@@ -66,9 +66,11 @@
       this.playing = true;
       this.applyRate();
       this.app.emit("play", true);
-      // In scientific PM3D mode, start server-side PM3D playback.
+      // In scientific PM3D mode, start server-side PM3D playback. The playback
+      // rate may be 0 when starting from the paused preset; PM3D requires a
+      // positive speed, so default to 1x in that case.
       if (this.app.scientific && this.app.pm3dId) {
-        this.app.pm3dPlay(this.rate, this.app.pm3dAmax).catch(() => {});
+        this.app.pm3dPlay(this.rate > 0 ? this.rate : 1, this.app.pm3dAmax).catch(() => {});
       }
       return { playing: true, rate: this.rate };
     }

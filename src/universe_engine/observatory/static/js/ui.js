@@ -351,6 +351,19 @@
       // ruler: log10 of distance to focus
       const d = V.len(app.pos), lg = Math.log10(Math.max(d, 1)), lo = 3, hi = 26.5, f = U.clamp((lg - lo) / (hi - lo), 0, 1);
       $("ruler-mark").style.bottom = (f * 100) + "%"; $("ruler-val").style.display = "block"; $("ruler-val").textContent = U.fmtDist(d);
+      // ---- breadcrumb ribbon (Phase 1 shell) ----
+      const bcScale = $("breadcrumb-provenance");
+      if (bcScale) bcScale.textContent = app.scientific ? "SIMULATED · PM3D" : "ILLUSTRATIVE · procedural";
+      const bcUni = $("crumb-universe"); const bcScaleEl = $("crumb-scale");
+      if (bcUni) bcUni.textContent = app.node && app.node.kind === "universe" ? "Universe" : "Universe";
+      if (bcScaleEl) bcScaleEl.textContent = ep.name;
+      // ---- status bar (Phase 1 shell) ----
+      const fpsEl = $("status-fps");
+      if (fpsEl) { fpsEl.textContent = "FPS: —"; }
+      const solversEl = $("status-solvers");
+      if (solversEl) solversEl.textContent = "Solver: " + (app.scientific ? "PM3D (simulated)" : "FLRW background");
+      const cpEl = $("status-checkpoint");
+      if (cpEl) cpEl.textContent = "Checkpoint: " + (app.listCheckpoints ? (app.listCheckpoints().length || "none") : "none");
     }
     // Adaptive temperature formatting: avoid "0.0 K" for nonzero values; use scientific notation when tiny/huge.
     function fmtTempAdaptive(T) {
@@ -482,6 +495,36 @@
     updatePlaybackUI();
     wireNav();
     renderObjectExplorer();
+
+    // ---- Phase 1 shell: explorer collapse / inspector resize & collapse ----
+    const explorer = $("sidebar-left"); const inspector = $("sidebar-right");
+    const btnToggleExp = $("btn-toggle-explorer"); const btnToggleIns = $("btn-toggle-inspector");
+    if (btnToggleExp) btnToggleExp.addEventListener("click", () => {
+      const col = explorer.classList.toggle("collapsed");
+      btnToggleExp.textContent = col ? "&#9654;" : "&#9664;";
+      btnToggleExp.title = col ? "Expand explorer" : "Collapse explorer";
+    });
+    if (btnToggleIns) btnToggleIns.addEventListener("click", () => {
+      const col = inspector.classList.toggle("collapsed");
+      btnToggleIns.textContent = col ? "&#9664;" : "&#9654;";
+      btnToggleIns.title = col ? "Collapse inspector" : "Expand inspector";
+    });
+    // Inspector horizontal resize (320-480px).
+    if (inspector) {
+      const handle = document.createElement("div");
+      handle.className = "resize-handle"; handle.style.cssText = "position:absolute;left:0;top:0;bottom:0;width:6px;cursor:ew-resize;z-index:2;";
+      inspector.style.position = "relative";
+      inspector.appendChild(handle);
+      let startX = 0, startW = 0;
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); startX = e.clientX; startW = inspector.clientWidth;
+        inspector.setPointerCapture(e.pointerId);
+        const move = (ev) => { inspector.style.width = Math.min(480, Math.max(320, startW + (ev.clientX - startX))) + "px"; };
+        const up = () => { inspector.releasePointerCapture(e.pointerId); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+        window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+      });
+    }
+
     return ui;
   };
 })(typeof window !== "undefined" ? window : globalThis);

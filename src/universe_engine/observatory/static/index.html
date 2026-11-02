@@ -6,64 +6,16 @@
 <meta name="color-scheme" content="dark">
 <title>Universe Observatory</title>
 <link rel="stylesheet" href="css/app.css">
-<style>
-  #shell { display: grid; grid-template-columns: 300px 1fr 340px; grid-template-rows: auto 1fr auto; gap: 0; height: 100vh; overflow: hidden; }
-  @media (max-width: 1100px) { #shell { grid-template-columns: 260px 1fr 300px; } }
-  @media (max-width: 820px) { #shell { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr auto; } #sidebar-right { grid-column: 1 / -1; } }
-  #top { grid-column: 1 / -1; z-index: 10; }
-  #canvas-wrap { grid-row: 2 / 3; grid-column: 1 / -1; position: relative; min-height: 0; }
-  canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: #000 }
-  canvas#gl.dragging { cursor: grabbing }
-  canvas#gl.pointing { cursor: pointer }
-  #sidebar-left { grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-right: 1px solid var(--line); background: var(--glass2); }
-  #sidebar-right { grid-row: 2 / 3; overflow: auto; padding: 10px 12px; font-size: 12.5px; border-left: 1px solid var(--line); background: var(--glass2); }
-  .panel { margin-bottom: 12px; }
-  .panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
-  .card { background: rgba(20,24,38,.45); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; margin-bottom: 8px; }
-  label { display: block; margin: 5px 0 2px; color: var(--muted-foreground); font-size: 11.5px; }
-  input, select { width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--ink); }
-  button { width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: var(--ink); cursor: pointer; font: inherit; margin-top: 4px; }
-  button:hover { background: rgba(255,255,255,.13); }
-  button.accent { background: linear-gradient(135deg,rgba(143,176,255,.32),rgba(185,155,255,.32)); border-color: rgba(160,180,255,.55); }
-  button.secondary { background: var(--glass); border-color: var(--line); }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-  .row { display: flex; gap: 6px; margin-top: 6px; }
-  .row > * { flex: 1; width: auto; }
-  .obj { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; margin: 2px 0; font-size: 12.5px; border: 1px solid transparent; }
-  .obj:hover { background: rgba(255,255,255,.06); border-color: var(--line); }
-  .obj.selected { background: rgba(143,176,255,.2); border-color: var(--acc); }
-  .obj .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mut); flex: 0 0 8px; }
-  .obj.kind-planet .dot { background: #58a6ff; }
-  .obj.kind-star .dot { background: #ffd9a0; }
-  .obj.kind-galaxy .dot { background: #b99bff; }
-  .obj.kind-universe .dot { background: #fff; }
-  .obj.kind-halo .dot { background: #9aa4bd; }
-  .obj-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .obj-sub { font-size: 10.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .obj-actions { display: flex; gap: 4px; }
-  .obj-actions button { width: auto; padding: 2px 6px; font-size: 10.5px; margin: 0; }
-  .search { width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--ink); margin-bottom: 8px; }
-  .empty { color: var(--muted-foreground); font-size: 11.5px; font-style: italic; padding: 6px 0; }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 4px 0 0; font-size: 12.5px; }
-  dt { color: var(--muted-foreground); }
-  dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
-  .badge { display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 9.5px; margin-right: 4px; border: 1px solid var(--line); color: var(--mut); }
-  .badge.simulated { border-color: var(--success); color: var(--success); }
-  .badge.speculative { border-color: var(--destructive); color: var(--destructive); }
-  .link { color: var(--acc); cursor: pointer; text-decoration: underline; font-size: 11.5px; }
-  .link:hover { color: #8fb0ff; }
-  .fine { color: var(--mut); font-size: 11px; line-height: 1.45; margin-top: 6px; }
-  .notice { color: var(--warm); font-size: 11px; margin-top: 6px; text-align: center; background: rgba(255,191,128,.1); border: 1px solid rgba(255,191,128,.4); border-radius: 10px; padding: 5px 8px; }
-  #explore-list { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: rgba(0,0,0,.25); }
-</style>
 </head>
 <body>
 <div id="shell">
+
+  <!-- Top application bar — 56px, full width -->
   <header id="top" class="glass">
-    <div class="brand"><span class="logo" aria-hidden="true"></span><span>Universe Observatory</span></div>
+    <div class="brand"><span class="logo" aria-hidden="true"></span><span>Universe Engine</span></div>
     <nav id="crumbs" aria-label="Where you are"></nav>
     <div class="spacer"></div>
-    <div id="top-right" style="display:flex;align-items:center;gap:8px">
+    <div class="top-right">
       <span id="top-universe" class="fine">Reference universe &middot; <span id="top-model">&Lambda;CDM</span></span>
       <button id="btn-save" class="pill secondary" title="Save state">Save</button>
       <button id="btn-settings" class="pill icon" title="Settings" aria-label="Settings">&#9776;</button>
@@ -72,92 +24,133 @@
     </div>
   </header>
 
-  <div id="canvas-wrap">
-    <canvas id="gl" aria-label="Universe view"></canvas>
-    <div id="labels" aria-hidden="true"></div>
-    <div id="tip" class="tip" hidden><b id="tip-name"></b><span id="tip-sub"></span></div>
+  <!-- Navigation rail — 64px, always visible -->
+  <nav id="nav-rail" aria-label="Workspaces">
+    <a class="nav-item on" href="/" title="Observatory"><span class="nav-glyph" aria-hidden="true">&#128171;</span><span class="nav-label">Observatory</span></a>
+    <a class="nav-item" href="/research-lab" title="Mission Control"><span class="nav-glyph" aria-hidden="true">&#128205;</span><span class="nav-label">Mission Control</span></a>
+    <a class="nav-item" href="/research-lab" title="Research Labs"><span class="nav-glyph" aria-hidden="true">&#128212;</span><span class="nav-label">Research Labs</span></a>
+    <a class="nav-item placeholder" href="#" title="Analysis — not yet implemented"><span class="nav-glyph" aria-hidden="true">&#128209;</span><span class="nav-label">Analysis</span></a>
+    <a class="nav-item placeholder" href="#" title="Universe Library — not yet implemented"><span class="nav-glyph" aria-hidden="true">&#128195;</span><span class="nav-label">Library</span></a>
+  </nav>
+
+  <!-- Main content area — breadcrumb + viewport + timeline -->
+  <div id="main">
+
+    <!-- Breadcrumb / scale ribbon — 44px -->
+    <div id="breadcrumb" aria-label="Location and scale">
+      <div class="bread-crumb">
+        <button id="crumb-universe">Universe</button><span class="sep">›</span>
+        <button id="crumb-scale">Cosmic Structure</button>
+        <span class="bread-prov chip" id="breadcrumb-provenance">SIMULATED</span>
+      </div>
+    </div>
+
+    <!-- Viewport area — explorer | canvas | inspector -->
+    <div id="viewport-area">
+
+      <!-- Explorer sidebar — 272px, collapsible -->
+      <aside id="sidebar-left">
+        <div class="panel">
+          <h3 style="margin:0">Universe Explorer</h3>
+          <input id="obj-search" type="search" class="search" placeholder="Search galaxy, star, planet&hellip;">
+          <div id="explore-list"></div>
+          <div class="fine" id="explore-hint">Select an object to focus it. Use Focus / Follow / Surface to navigate.</div>
+        </div>
+        <div class="panel">
+          <h3>Navigation</h3>
+          <button id="btn-focus" class="pill">Focus selection (F)</button>
+          <button id="btn-follow" class="pill secondary">Follow</button>
+          <button id="btn-surface" class="pill secondary">Surface</button>
+          <button id="btn-orbit" class="pill secondary">Orbit</button>
+          <button id="btn-free" class="pill secondary">Free flight</button>
+          <button id="btn-home" class="pill accent">Overview (H)</button>
+          <button id="btn-back" class="pill secondary">Back</button>
+          <div class="fine">WASD: move (free/surface) &middot; Shift: accelerate &middot; Esc: cancel autopilot</div>
+        </div>
+        <div class="panel">
+          <h3>Living World &middot; Organisms</h3>
+          <div class="fine" style="margin-bottom:6px">Persistent organisms living in modeled habitats. Select one to open the Mind Inspector.</div>
+          <div id="org-list" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.25);margin-bottom:6px"></div>
+          <div class="row">
+            <button id="btn-org-refresh" class="pill secondary">Refresh</button>
+            <button id="btn-org-saves" class="pill secondary">Saved</button>
+            <button id="btn-org-create" class="pill accent">Create organism</button>
+          </div>
+          <div id="org-save-list" style="display:none;margin-top:6px;font-size:11px"></div>
+          <div class="fine" id="org-hint" style="margin-top:4px">Create an organism from the API or select a saved one.</div>
+        </div>
+      </aside>
+
+      <!-- Center viewport — existing live WebGL renderer -->
+      <div id="canvas-wrap">
+        <canvas id="gl" aria-label="Universe view"></canvas>
+        <div id="labels" aria-hidden="true"></div>
+        <div id="tip" class="tip" hidden><b id="tip-name"></b><span id="tip-sub"></span></div>
+      </div>
+
+      <!-- Inspector sidebar — 360px, resizable 320-480 -->
+      <aside id="sidebar-right">
+        <div class="panel" id="inspector-panel">
+          <h3 id="insp-kind" style="margin:0">Inspector</h3>
+          <div id="insp-name"></div>
+          <dl id="insp-rows"></dl>
+          <p id="insp-text" class="fine"></p>
+        </div>
+        <div class="panel" id="habitat-panel" style="display:none">
+          <h3>Habitat / Environment</h3>
+          <dl id="hab-rows"></dl>
+          <div id="hab-actions" style="margin-top:8px"></div>
+          <p id="hab-text" class="fine"></p>
+        </div>
+        <div class="panel" id="mind-inspector-panel" style="display:none">
+          <h3>Mind Inspector <span id="mind-oid" class="badge"></span></h3>
+          <div id="mind-status" class="fine"></div>
+          <dl id="mind-rows"></dl>
+          <div id="mind-memory" style="margin-top:8px"></div>
+          <div id="mind-actions" style="margin-top:8px"></div>
+          <div id="mind-controls" style="margin-top:8px"></div>
+          <p id="mind-text" class="fine"></p>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- Timeline dock — 104px, own fixed region -->
+    <footer id="dock" class="glass" aria-label="Playback timeline">
+      <button id="btn-play" class="play" title="Play / pause (Space)" aria-label="Play">&#9654;</button>
+      <button id="btn-step-back" class="pill" title="Step backward (,)" aria-label="Step backward">&#9666;</button>
+      <button id="btn-step-fwd" class="pill" title="Step forward (.)" aria-label="Step forward">&#9656;</button>
+      <button id="btn-future" class="pill accent" title="Jump to far future (J)">Future</button>
+      <div class="clock">
+        <div id="t-main">0</div>
+        <div class="sub"><span id="t-epoch"></span></div>
+      </div>
+      <div class="tl">
+        <div class="ticks" id="tl-ticks"></div>
+        <input id="tl" type="range" min="0" max="1000" value="0" step="1" aria-label="Cosmic time">
+        <div id="tl-rate" class="fine" style="text-align:center;margin-top:4px">Rate: paused · paused</div>
+        <div class="stats"><span>Temperature <b id="t-temp"></b></span><span>Redshift <b id="t-z"></b></span><span>Region (comoving) <b id="t-size"></b></span></div>
+      </div>
+      <div id="horizon-notice" class="fine notice" hidden>Reached current model horizon — extend to continue</div>
+      <div class="seg small" id="speed"></div>
+    </footer>
+
   </div>
 
-  <aside id="sidebar-left">
-    <div class="panel">
-      <h3>Universe Explorer</h3>
-      <input id="obj-search" type="search" class="search" placeholder="Search galaxy, star, planet&hellip;">
-      <div id="explore-list"></div>
-      <div class="fine" id="explore-hint">Select an object to focus it. Use Focus / Follow / Surface to navigate.</div>
-    </div>
-    <div class="panel">
-      <h3>Navigation</h3>
-      <button id="btn-focus" class="pill">Focus selection (F)</button>
-      <button id="btn-follow" class="pill secondary">Follow</button>
-      <button id="btn-surface" class="pill secondary">Surface</button>
-      <button id="btn-orbit" class="pill secondary">Orbit</button>
-      <button id="btn-free" class="pill secondary">Free flight</button>
-      <button id="btn-home" class="pill accent">Overview (H)</button>
-      <button id="btn-back" class="pill secondary">Back</button>
-      <div class="fine">WASD: move (free/surface) &middot; Shift: accelerate &middot; Esc: cancel autopilot</div>
-    </div>
+  <!-- Status bar — 28px, bottom full width -->
+  <div id="status-bar" aria-label="Simulation status">
+    <div class="status-solvers"><span class="status-dot ok" aria-hidden="true"></span><span id="status-solvers">Solver: ready</span></div>
+    <div class="status-checkpoint"><span class="status-dot ok" aria-hidden="true"></span><span id="status-checkpoint">Checkpoint: none</span></div>
+    <div class="fine" id="status-fps">FPS: —</div>
+  </div>
 
-    <div class="panel">
-      <h3>Living World &middot; Organisms</h3>
-      <div class="fine" style="margin-bottom:6px">Persistent organisms living in modeled habitats. Select one to open the Mind Inspector.</div>
-      <div id="org-list" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.25);margin-bottom:6px"></div>
-      <div class="row">
-        <button id="btn-org-refresh" class="pill secondary">Refresh</button>
-        <button id="btn-org-saves" class="pill secondary">Saved</button>
-        <button id="btn-org-create" class="pill accent">Create organism</button>
-      </div>
-      <div id="org-save-list" style="display:none;margin-top:6px;font-size:11px"></div>
-      <div class="fine" id="org-hint" style="margin-top:4px">Create an organism from the API or select a saved one.</div>
-    </div>
-  </aside>
+  <!-- Collapse toggles (always accessible, outside the collapsible sidebars) -->
+  <button id="btn-toggle-explorer" class="toggle-collapse" title="Collapse explorer" aria-label="Collapse explorer">&#9664;</button>
+  <button id="btn-toggle-inspector" class="toggle-collapse" title="Collapse inspector" aria-label="Collapse inspector">&#9654;</button>
 
-  <aside id="sidebar-right">
-    <div class="panel" id="inspector-panel">
-      <h3 id="insp-kind">Inspector</h3>
-      <div id="insp-name"></div>
-      <dl id="insp-rows"></dl>
-      <p id="insp-text" class="fine"></p>
-    </div>
-    <div class="panel" id="habitat-panel" style="display:none">
-      <h3>Habitat / Environment</h3>
-      <dl id="hab-rows"></dl>
-      <div id="hab-actions" style="margin-top:8px"></div>
-      <p id="hab-text" class="fine"></p>
-    </div>
-    <div class="panel" id="mind-inspector-panel" style="display:none">
-      <h3>Mind Inspector <span id="mind-oid" class="badge"></span></h3>
-      <div id="mind-status" class="fine"></div>
-      <dl id="mind-rows"></dl>
-      <div id="mind-memory" style="margin-top:8px"></div>
-      <div id="mind-actions" style="margin-top:8px"></div>
-      <div id="mind-controls" style="margin-top:8px"></div>
-      <p id="mind-text" class="fine"></p>
-    </div>
-  </aside>
 </div>
 
 <div id="ruler" class="glass" aria-label="Scale"><div class="track"><div class="fill"></div><div id="ruler-mark"><span id="ruler-val"></span></div></div><ul id="ruler-ticks"></ul></div>
-
-<footer id="dock" class="glass">
-  <button id="btn-play" class="play" title="Play / pause (Space)" aria-label="Play">&#9654;</button>
-    <button id="btn-step-back" class="pill" title="Step backward (,)" aria-label="Step backward">&#9666;</button>
-    <button id="btn-step-fwd" class="pill" title="Step forward (.)" aria-label="Step forward">&#9656;</button>
-    <button id="btn-future" class="pill accent" title="Jump to far future (J)">Future</button>
-  <div class="clock">
-    <div id="t-main">0</div>
-    <div class="sub"><span id="t-epoch"></span></div>
-  </div>
-  <div class="tl">
-    <div class="ticks" id="tl-ticks"></div>
-    <input id="tl" type="range" min="0" max="1000" value="0" step="1" aria-label="Cosmic time">
-    <div id="tl-rate" class="fine" style="text-align:center;margin-top:4px">Rate: paused · paused</div>
-    <div class="stats"><span>Temperature <b id="t-temp"></b></span><span>Redshift <b id="t-z"></b></span><span>Region (comoving) <b id="t-size"></b></span></div>
-  </div>
-  <div id="horizon-notice" class="fine notice" hidden>Reached current model horizon — extend to continue</div>
-  <div class="seg small" id="speed"></div>
-</footer>
-<div id="epoch-card" class="glass"><b id="ep-name"></b><p id="ep-text"></p></div>
-<div id="hint">Scroll to fly into whatever you point at &middot; drag to orbit &middot; click a label to travel &middot; Backspace zooms out</div>
 
 <div id="intro">
   <div class="intro-card">
@@ -167,15 +160,17 @@
     <div class="progress"><div id="prog-bar"></div></div>
     <div id="prog-label" class="fine">Preparing&hellip;</div>
     <div class="row center">
+      <div style="display:inline-flex;align-items:center;gap:10px">
+        <label style="margin:0;font-size:12px;color:var(--text-secondary);white-space:nowrap">Seed</label>
+        <input id="seed" type="number" value="42" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px">
+      </div>
       <button id="btn-begin" class="pill accent big" disabled>Begin Simulation</button>
     </div>
     <p id="intro-err" class="err" hidden></p>
   </div>
 </div>
 
-<!-- Staged loader overlay (Bug H fix): shows readiness steps and, on failure,
-     offers Retry / Copy error / Continue without guide so the viewer never
-     dead-locks on "Preparing…". Controlled from main.js via U.loader.* -->
+<!-- Staged loader overlay (Bug H fix) -->
 <div id="loader-overlay" class="glass intro-card" hidden>
   <div class="logo big" aria-hidden="true"></div>
   <h1>Universe Observatory</h1>
@@ -211,5 +206,11 @@
 <script src="js/ui.js"></script>
 <script src="js/mind-inspector.js"></script>
 <script src="js/main.js"></script>
+<script>
+  // Honest placeholders: workspaces without a real route do not navigate.
+  document.querySelectorAll("#nav-rail .placeholder").forEach((b) => {
+    b.addEventListener("click", (e) => { e.preventDefault(); });
+  });
+</script>
 </body>
 </html>
