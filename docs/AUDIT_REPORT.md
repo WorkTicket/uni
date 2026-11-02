@@ -219,6 +219,56 @@ Host OS: Windows 11 10.0.26100-SP0. Windows build: NOT_TESTED (no clean-machine 
 - `audit_runs/pytest_full/stdout.log` (sha256 `6262b9de5552ff0b0c948d56080728445f93fba367a8461c305cc5add4d30dff`) and `stderr.log`.
 - `audit_runs/` is gitignored; reports in `docs/` are committed.
 
+## 11. Persistence A/B test (Stage 0b.3)
+
+**Script:** `scripts/persistence_ab_test.py`  
+**Command:** `$env:PYTHONPATH="src"; python scripts/persistence_ab_test.py`  
+**Machine:** Windows 11 10.0.26100-SP0  
+**Python:** 3.14.5 (tags/v3.14.5, MSC v.1944 64 bit AMD64)  
+**NumPy:** 2.5.1  
+**Threads fixed:** OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1, MKL_NUM_THREADS=1, NUMEXPR_NUM_THREADS=1, VECLIB_MAXIMUM_THREADS=1  
+**Result holds only for the machine and library versions tested.**
+
+### Setup
+- Run A: organism (`ecs_iw`, seed 23) advances uninterrupted for 40 steps in a habitat (seed 11, 4 patches).
+- Run B: same organism advances 20 steps, checkpoints, is restored into a fresh habitat with the same seed, then continues 20 more steps.
+- State compared by canonical serialization + SHA-256 hash across: identity, t_gyr, seed, patch_index, alive, n_steps, lifetime_reward, total_cost_paid, body, controller, self_model, memory, developmental_history, patch, habitat.
+
+### Result
+- Run A final hash: (computed by `scripts/persistence_ab_test.py`; recompute per run — see script stdout)
+- Run B final hash: differs from Run A
+- **Hashes do NOT match.** Save/reload/resume is NOT bit-exact against an uninterrupted run.
+
+### Fields that MATCH (run A == run B)
+`t_gyr`, `alive`, `n_steps`, `body_nutrients`, `body_stress`, `body_age`, `memory_n_entries`, `n_dev_events`
+
+### Fields that MISMATCH (run A != run B)
+- `lifetime_reward` (A=-1.6, B=-0.4), `total_cost_paid` (A=2.0, B=0.8), `body_energy` (A=4.0, B=5.2)
+- `controller.checkpoint.*` — all output weights `W_out` and hidden state `hidden` diverge
+- `controller.self_model.*` and `controller.self_model_internal.*` — calibration_error, sensorimotor_map, action_history diverge after the restore point
+- `controller.workspace.*` — broadcast_history salience and contents diverge after the restore point
+- `developmental_history[*]` — action/reward/energy entries diverge from the restore point onward (index ~22+)
+- `memory.entries[*]` — action_type, reward, energy_level, concentrations, pH, temperature diverge from the restore point onward
+- `habitat.*` and `patch.*` — patch concentrations, pH, temperature_K diverge (organism's different actions change patch chemistry)
+- `self_model.calibration_error`, `self_model.sensorimotor_map`
+
+### Root cause (pre-existing, disclosed, not fixed in Stage 0)
+`PersistentOrganism.restore()` re-seeds the controller RNG from the stored seed
+(`persistent_organism.py:506`); it does NOT continue the RNG stream position.
+The checkpoint stores weights, not RNG state. So stochastic action selection is
+deterministic *given the seed* but is not bitwise continuation after the restore
+point. After the reload, the organism makes different choices, which propagates
+into energy, habitat chemistry, memory, self-model, workspace, and developmental
+history. This matches the honest limitation documented in
+`tests/research/test_persistent_organism_checkpoint.py`.
+
+### Verdict
+Persistence A/B equivalence is NOT achieved with the current restore
+implementation. Full bit-exact save/reload/resume (Stage 2 acceptance test)
+requires capturing and restoring the controller RNG stream position (Python
+`random`, NumPy `bit_generator.state`, and any other stateful RNG) in
+addition to weights. This is a Stage 2 requirement, not a Stage 0 fix.
+
 ---
 
 **Gate check (Stage 0):**
